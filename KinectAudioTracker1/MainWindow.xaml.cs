@@ -10,6 +10,7 @@ namespace KinectAudioTracker
     using System.Speech.Recognition;
     using System.Threading;
     using System.Windows.Threading;
+    using System.Collections.Generic;
     using Microsoft.Kinect;
     /// <summary>
     /// Interaction logic for MainWindow.xaml
@@ -18,8 +19,7 @@ namespace KinectAudioTracker
     {
         private KinectSensor kinect;
 
-        private short[] depthPixels;
-        private byte[] coloredDepth;
+        private DepthImageFrame currentDepthFrame;
         private WriteableBitmap depthBitmap;
 
         // color divisors for tinting depth pixels
@@ -27,10 +27,6 @@ namespace KinectAudioTracker
         private static readonly int[] IntensityShiftByPlayerG = { 1, 2, 2, 0, 2, 0, 0, 1 };
         private static readonly int[] IntensityShiftByPlayerB = { 1, 0, 2, 2, 0, 2, 0, 2 };
 
-        private readonly string recognizerID = "SR_MS_en-US_Kinect_11.0";
-        private SpeechRecognitionEngine speechRecognizer;
-
-        private Thread audioThread;
         private double soundSourceAngle;
         private double soundSourceConfidence;
         private readonly double confidenceCutoff = 0.0;
@@ -65,10 +61,10 @@ namespace KinectAudioTracker
             this.kinect.DepthStream.Enable(DepthImageFormat.Resolution640x480Fps30);
             this.kinect.SkeletonStream.Enable();
 
-            this.depthPixels = new short[this.kinect.DepthStream.FramePixelDataLength];
-            this.coloredDepth = new byte[this.kinect.DepthStream.FramePixelDataLength * sizeof(int)];
             this.depthBitmap = new WriteableBitmap(this.kinect.DepthStream.FrameWidth, this.kinect.DepthStream.FrameHeight, 96.0, 96.0, PixelFormats.Bgr32, null);
             image1.Source = this.depthBitmap;
+
+            this.currentDepthFrame = null;
             this.playerLocations = new PlayerLocation();
 
             this.kinect.DepthFrameReady += new EventHandler<DepthImageFrameReadyEventArgs>(kinect_DepthFrameReady);
@@ -139,18 +135,14 @@ namespace KinectAudioTracker
             this.soundSourceAngle = e.Angle;
             this.soundSourceConfidence = e.ConfidenceLevel;
 
-            // Plot the sound source location
+            // Update the sound source location display
             if (this.soundSourceConfidence > this.confidenceCutoff)
             {
                 audioAngleDisplay.rotTx.Angle = -this.soundSourceAngle;
-                var minAngle = KinectAudioSource.MinSoundSourceAngle;
-                var maxAngle = KinectAudioSource.MaxSoundSourceAngle;
-                //double soundSourceLocation = (clamp<double>(minAngle, this.soundSourceAngle, maxAngle) - minAngle) / (maxAngle - minAngle);
-                //drawRect(new Rectangle((int)(640 * soundSourceLocation), 0, 20, 20), ref this.depthBitmap, Color.Azure);
             }
         }
 
-        private T clamp<T>(T min, T x, T max) where T : System.IComparable<T>
+        private static T clamp<T>(T min, T x, T max) where T : System.IComparable<T>
         {
             if (x.CompareTo(min) < 0)
             {
@@ -175,81 +167,102 @@ namespace KinectAudioTracker
 
         private void kinect_DepthFrameReady(object sender, DepthImageFrameReadyEventArgs e)
         {
-            using (DepthImageFrame imageFrame = e.OpenDepthImageFrame())
+            if (this.kinect == null)
+                return;
+
+            // If there is a depth frame already stored, dispose of it
+            if (this.currentDepthFrame != null)
             {
-                if (imageFrame != null)
+                this.currentDepthFrame.Dispose();
+            }
+            this.currentDepthFrame = e.OpenDepthImageFrame();
+
+            if (this.currentDepthFrame != null)
+            {
+                var coloredPixels = processDepthFrame();
+                drawDepthFrame(ref coloredPixels);
+                drawPlayers();
+            }
+        }
+
+        private byte[] processDepthFrame()
+        {
+            var depthPixels = new short[this.kinect.DepthStream.FramePixelDataLength];
+            var coloredPixels = new byte[this.kinect.DepthStream.FramePixelDataLength * sizeof(int)];
+
+            this.currentDepthFrame.CopyPixelDataTo(depthPixels);
+
+            this.playerLocations.clear();
+
+            int colorPixelIndex = 0;
+            for (int i = 0; i < depthPixels.Length; ++i)
+            {
+                int player = depthPixels[i] & DepthImageFrame.PlayerIndexBitmask;
+                int depth = depthPixels[i] >> DepthImageFrame.PlayerIndexBitmaskWidth;
+
+                byte intensity = (byte)(~(depth >> 4));
+
+                coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerR[player]);
+                coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerG[player]);
+                coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerB[player]);
+                ++colorPixelIndex;
+
+                // Update the player location average
+                if (player != 0)
                 {
-                    imageFrame.CopyPixelDataTo(this.depthPixels);
-
-                    playerLocations.clear();
-
-                    int colorPixelIndex = 0;
-                    for (int i = 0; i < depthPixels.Length; ++i)
-                    {
-                        int player = depthPixels[i] & DepthImageFrame.PlayerIndexBitmask;
-                        int depth = depthPixels[i] >> DepthImageFrame.PlayerIndexBitmaskWidth;
-
-                        byte intensity = (byte)(~(depth >> 4));
-
-                        coloredDepth[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerR[player]);
-                        coloredDepth[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerG[player]);
-                        coloredDepth[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerB[player]);
-                        ++colorPixelIndex;
-
-                        // Update the player location average
-                        if (player != 0)
-                        {
-                            var x = i % depthBitmap.PixelWidth;
-                            var y = i / depthBitmap.PixelWidth;
-                            playerLocations.update(player, x, y);
-                        }
-                    }
-
-                    //// Update the angle between the player and the kinect
-                    //for (int i = 0; i < 7; ++i)
-                    //{
-                    //    var playerPosition = playerLocations.getSkeletonCoordinateLocation(i, imageFrame);
-                    //    playerLocations.setAngle(i, radToDeg(-Math.Atan(playerPosition.X / playerPosition.Z)));
-                    //}
-
-                    // Draw the depth bitmap to the screen
-                    depthBitmap.WritePixels(new Int32Rect(0, 0, depthBitmap.PixelWidth, depthBitmap.PixelHeight), coloredDepth,
-                        depthBitmap.PixelWidth * sizeof(int), 0);
-
-                    drawPlayers();
+                    var x = i % depthBitmap.PixelWidth;
+                    var y = i / depthBitmap.PixelWidth;
+                    playerLocations.addPixelPosition(player, x, y);
                 }
             }
+
+            // Update the angle between the player and the kinect
+            for (int i = 1; i < 7; ++i)
+            {
+                var x = playerLocations.getWorldX(i, this.currentDepthFrame);
+                var z = playerLocations.getWorldZ(i, this.currentDepthFrame);
+                playerLocations.setAngle(i, radToDeg(-Math.Atan(x / z)));
+            }
+
+            return coloredPixels;
+        }
+
+        private void drawDepthFrame(ref byte[] coloredDepth)
+        {
+            // Draw the depth bitmap to the screen
+            depthBitmap.WritePixels(new Int32Rect(0, 0, depthBitmap.PixelWidth, depthBitmap.PixelHeight), coloredDepth,
+                depthBitmap.PixelWidth * sizeof(int), 0);
         }
 
         private void drawPlayers()
         {
-            //var talkingPlayer = this.playerLocations.getClosestAngle(this.soundSourceAngle, 10.0);
+            var talkingPlayer = this.playerLocations.getClosestPlayerByAngle(this.soundSourceAngle, 10.0);
 
-            //if (talkingPlayer != -1)
-            //    logLine(talkingPlayer.ToString());
-
-            for (int i = 0; i < 7; ++i)
+            for (int i = 1; i < 7; ++i)
             {
-                if (playerLocations.hasData(i))
+                if (playerLocations.hasPositionData(i))
                 {
-                    var x = playerLocations.getX(i);
-                    var y = playerLocations.getY(i);
+                    var x = playerLocations.getPixelX(i);
+                    var y = playerLocations.getPixelY(i);
 
-                    //if (i == talkingPlayer)
-                    //{
-                    //    drawRect(new Rectangle(x, y, 20, 20), ref this.depthBitmap, System.Drawing.Color.Green);
-                    //}
-                    drawRect(new Rectangle(x, y, 20, 20), ref this.depthBitmap, System.Drawing.Color.Orange);
+                    if (i == talkingPlayer)
+                    {
+                        drawRect(new Rectangle(x, y, 20, 20), ref this.depthBitmap, System.Drawing.Color.GhostWhite);
+                    }
+                    else
+                    {
+                        drawRect(new Rectangle(x, y, 20, 20), ref this.depthBitmap, System.Drawing.Color.Orange);
+                    }
                 }
             }
         }
 
-        private double radToDeg(double rad)
+        private static double radToDeg(double rad)
         {
             return rad * (180 / Math.PI);
         }
 
-        private void drawRect(Rectangle r, ref WriteableBitmap b, Color c)
+        private static void drawRect(Rectangle r, ref WriteableBitmap b, Color c)
         {
             for (int i = r.Y; i < r.Y + r.Height; ++i)
             {
@@ -260,7 +273,7 @@ namespace KinectAudioTracker
             }
         }
 
-        private void drawPixel(int x, int y, ref WriteableBitmap b, Color c)
+        private static void drawPixel(int x, int y, ref WriteableBitmap b, Color c)
         {
             if (x < 0 || x >= b.PixelWidth || y < 0 || y >= b.PixelHeight)
             {
@@ -308,6 +321,11 @@ namespace KinectAudioTracker
             initializeKinect();
         }
 
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            uninitializeKinect();
+        }
+
         private void start_Click(object sender, RoutedEventArgs e)
         {
             if (!this.audioOn)
@@ -341,38 +359,97 @@ namespace KinectAudioTracker
         public PlayerLocation()
         {
             this.playerCount = 7;
-            this.playerLocations = new Point[7];
-            this.playerAngles = new double[7];
-            this.averageCount = new int[7];
+            clear();
         }
 
         public PlayerLocation(int playerCount)
         {
             this.playerCount = playerCount;
-            this.playerLocations = new Point[playerCount];
-            this.playerAngles = new double[playerCount];
-            this.averageCount = new int[playerCount];
+            clear();
         }
 
-        public void update(int playerNumber, int x, int y)
+        public void addPixelPosition(int playerNumber, int x, int y)
         {
-            checkPlayerNumber(playerNumber);
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
 
             ++averageCount[playerNumber];
             playerLocations[playerNumber].X += x;
             playerLocations[playerNumber].Y += y;
         }
 
+        public int getPixelX(int playerNumber)
+        {
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
+
+            if (averageCount[playerNumber] == 0)
+            {
+                return 0;
+            }
+            else
+            {
+                return playerLocations[playerNumber].X / averageCount[playerNumber];
+            }
+        }
+
+        public int getPixelY(int playerNumber)
+        {
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
+
+            if (averageCount[playerNumber] == 0)
+            {
+                return 0;
+            }
+            else
+            {
+                return playerLocations[playerNumber].Y / averageCount[playerNumber];
+            }
+        }
+
+        public double getWorldX(int playerNumber, DepthImageFrame context)
+        {
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
+            if (context == null)
+                throw new ArgumentNullException();
+
+            return context.MapToSkeletonPoint(playerLocations[playerNumber].X, playerLocations[playerNumber].Y).X;
+        }
+
+        public double getWorldY(int playerNumber, DepthImageFrame context)
+        {
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
+            if (context == null)
+                throw new ArgumentNullException();
+
+            return context.MapToSkeletonPoint(playerLocations[playerNumber].X, playerLocations[playerNumber].Y).Y;
+        }
+
+        public double getWorldZ(int playerNumber, DepthImageFrame context)
+        {
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
+            if (context == null)
+                throw new ArgumentNullException();
+
+            return context.MapToSkeletonPoint(playerLocations[playerNumber].X, playerLocations[playerNumber].Y).Z;
+        }
+
         public void setAngle(int playerNumber, double angle)
         {
-            checkPlayerNumber(playerNumber);
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
 
             playerAngles[playerNumber] = angle;
         }
 
         public double getAngle(int playerNumber, double angle)
         {
-            checkPlayerNumber(playerNumber);
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
 
             return playerAngles[playerNumber];
         }
@@ -383,7 +460,7 @@ namespace KinectAudioTracker
         /// <param name="angle"></param>
         /// <param name="cutoff"></param>
         /// <returns></returns>
-        public int getClosestAngle(double angle, double cutoff)
+        public int getClosestPlayerByAngle(double angle, double cutoff)
         {
             double min_difference = double.PositiveInfinity;
             int min_player = -1;
@@ -405,55 +482,37 @@ namespace KinectAudioTracker
         {
             this.playerLocations = new Point[playerCount];
             this.averageCount = new int[playerCount];
+
             this.playerAngles = new double[playerCount];
+            for (int i = 0; i < playerCount; ++i)
+            {
+                this.playerAngles[i] = -1;
+            }
         }
 
-        public bool hasData(int playerNumber)
+        public bool hasPositionData(int playerNumber)
         {
+            if (!checkPlayerNumber(playerNumber))
+                return false;
+
             return averageCount[playerNumber] != 0;
         }
 
-        public int getX(int playerNumber)
+        public bool hasAngleData(int playerNumber)
         {
-            checkPlayerNumber(playerNumber);
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
 
-            if (averageCount[playerNumber] == 0)
-            {
-                return 0;
-            }
-            else
-            {
-                return playerLocations[playerNumber].X / averageCount[playerNumber];
-            }
+            return playerAngles[playerNumber] != -1;
         }
 
-        public int getY(int playerNumber)
+        private bool checkPlayerNumber(int n)
         {
-            checkPlayerNumber(playerNumber);
-
-            if (averageCount[playerNumber] == 0)
+            if (n <= 0 || n >= this.playerLocations.Length)
             {
-                return 0;
+                return false;
             }
-            else
-            {
-                return playerLocations[playerNumber].Y / averageCount[playerNumber];
-            }
-        }
-
-        public SkeletonPoint getSkeletonCoordinateLocation(int playerNumber, DepthImageFrame context)
-        {
-            checkPlayerNumber(playerNumber);
-
-            return context.MapToSkeletonPoint(playerLocations[playerNumber].X, playerLocations[playerNumber].Y);
-        }
-
-        private void checkPlayerNumber(int n)
-        {
-            if (n < 0 || n >= this.playerLocations.Length)
-            {
-                throw new ArgumentOutOfRangeException("playerNumber", "Player number out of range.");
-            }
+            return true;
         }
     }
 }

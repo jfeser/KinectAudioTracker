@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual C# Express 2010
+# Visual Studio 2010
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KinectAudioTracker1", "KinectAudioTracker1\KinectAudioTracker1.csproj", "{361ABF8E-FBA6-4AFF-B209-30DFACA15506}"
 EndProject
 Global

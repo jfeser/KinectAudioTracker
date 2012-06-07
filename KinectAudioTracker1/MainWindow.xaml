@@ -1,9 +1,28 @@
 ﻿<Window x:Class="KinectAudioTracker.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MainWindow" Height="562" Width="946">
+        xmlns:local="clr-namespace:KinectAudioTracker"
+        Title="MainWindow" Height="562" Width="946" Loaded="Window_Loaded">
     <Grid Height="513" Width="897">
-        <ListBox Height="489" HorizontalAlignment="Left" Margin="12,12,0,0" Name="listBox1" VerticalAlignment="Top" Width="226" />
-        <Image Height="480" HorizontalAlignment="Left" Margin="244,12,0,0" Name="image1" Stretch="Fill" VerticalAlignment="Top" Width="640" />
+        <Grid.RowDefinitions>
+            <RowDefinition Height="14*" />
+            <RowDefinition Height="302*" />
+            <RowDefinition Height="197*" />
+        </Grid.RowDefinitions>
+        <ListBox Height="455" HorizontalAlignment="Left" Margin="12,12,0,0" Name="listBox1" VerticalAlignment="Top" Width="226" Grid.RowSpan="3" />
+        <TabControl Height="489" HorizontalAlignment="Left" Margin="244,12,0,0" Name="tabControl1" VerticalAlignment="Top" Width="641" Grid.RowSpan="3">
+            <TabItem Header="Depth view" Name="depthView">
+                <Grid>
+                    <Image Height="446" HorizontalAlignment="Left" Margin="6,6,0,0" Name="image1" Stretch="Fill" VerticalAlignment="Top" Width="619" />
+                </Grid>
+            </TabItem>
+            <TabItem Header="Audio source" Name="playerLoc">
+                <Grid>
+                    <local:AngleDisplay x:Name="audioAngleDisplay" />
+                </Grid>
+            </TabItem>
+        </TabControl>
+        <Button Content="Stop recognizer" Height="23" HorizontalAlignment="Right" Margin="0,162,659,0" Name="stop" VerticalAlignment="Top" Width="105" Grid.Row="2" Click="stop_Click" />
+        <Button Content="Start recognizer" Height="23" HorizontalAlignment="Left" Margin="12,162,0,0" Name="start" VerticalAlignment="Top" Width="115" Grid.Row="2" Click="start_Click" />
     </Grid>
 </Window>

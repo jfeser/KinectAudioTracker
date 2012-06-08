@@ -22,6 +22,9 @@ namespace KinectAudioTracker
         private DepthImageFrame currentDepthFrame;
         private WriteableBitmap depthBitmap;
 
+        private ColorImageFrame currentColorFrame;
+        private WriteableBitmap colorBitmap;
+
         // color divisors for tinting depth pixels
         private static readonly int[] IntensityShiftByPlayerR = { 1, 2, 0, 2, 0, 0, 2, 0 };
         private static readonly int[] IntensityShiftByPlayerG = { 1, 2, 2, 0, 2, 0, 0, 1 };
@@ -62,9 +65,13 @@ namespace KinectAudioTracker
             this.kinect.SkeletonStream.Enable();
 
             this.depthBitmap = new WriteableBitmap(this.kinect.DepthStream.FrameWidth, this.kinect.DepthStream.FrameHeight, 96.0, 96.0, PixelFormats.Bgr32, null);
-            image1.Source = this.depthBitmap;
-
+            depthImage.Source = this.depthBitmap;
             this.currentDepthFrame = null;
+
+            this.colorBitmap = new WriteableBitmap(this.kinect.ColorStream.FrameWidth, this.kinect.ColorStream.FrameHeight, 96.0, 96.0, PixelFormats.Bgr32, null);
+            colorImage.Source = this.colorBitmap;
+            this.currentColorFrame = null;
+            
             this.playerLocations = new PlayerLocation();
 
             this.kinect.DepthFrameReady += new EventHandler<DepthImageFrameReadyEventArgs>(kinect_DepthFrameReady);
@@ -157,11 +164,24 @@ namespace KinectAudioTracker
 
         void kinect_ColorFrameReady(object sender, ColorImageFrameReadyEventArgs e)
         {
-            using (ColorImageFrame imageFrame = e.OpenColorImageFrame())
+            if (this.kinect == null)
+                return;
+
+            // If there is a color frame already stored, dispose of it
+            if (this.currentColorFrame != null)
             {
-                if (imageFrame != null)
-                {
-                }
+                this.currentColorFrame.Dispose();
+            }
+            var imageFrame = this.currentColorFrame = e.OpenColorImageFrame();
+
+            if (imageFrame != null)
+            {
+                var colorPixels = new byte[this.kinect.ColorStream.FramePixelDataLength];
+                imageFrame.CopyPixelDataTo(colorPixels);
+
+                // Draw the color bitmap to the screen
+                colorBitmap.WritePixels(new Int32Rect(0, 0, colorBitmap.PixelWidth, colorBitmap.PixelHeight), colorPixels,
+                    colorBitmap.PixelWidth * sizeof(int), 0);
             }
         }
 
@@ -236,7 +256,7 @@ namespace KinectAudioTracker
 
         private void drawPlayers()
         {
-            var talkingPlayer = this.playerLocations.getClosestPlayerByAngle(this.soundSourceAngle, 10.0);
+            var talkingPlayer = this.playerLocations.getClosestPlayerByAngle(this.soundSourceAngle, 50.0);
 
             for (int i = 1; i < 7; ++i)
             {
@@ -247,7 +267,7 @@ namespace KinectAudioTracker
 
                     if (i == talkingPlayer)
                     {
-                        drawRect(new Rectangle(x, y, 20, 20), ref this.depthBitmap, System.Drawing.Color.GhostWhite);
+                        logLine(i.ToString());
                     }
                     else
                     {

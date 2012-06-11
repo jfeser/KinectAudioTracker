@@ -7,11 +7,18 @@ using System.Windows.Media.Imaging;
 namespace KinectAudioTracker
 {
     using System.Drawing;
+    using System.Drawing.Imaging;
     using System.Speech.Recognition;
     using System.Threading;
     using System.Windows.Threading;
     using System.Collections.Generic;
+    using System.IO;
     using Microsoft.Kinect;
+
+    using Emgu.CV;
+    using Emgu.CV.Util;
+    using Emgu.CV.Structure;
+
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -39,6 +46,8 @@ namespace KinectAudioTracker
         private int tickCount;
 
         private PlayerLocation playerLocations;
+
+        private HaarCascade haar;
 
         public MainWindow()
         {
@@ -74,11 +83,15 @@ namespace KinectAudioTracker
             
             this.playerLocations = new PlayerLocation();
 
-            this.kinect.DepthFrameReady += new EventHandler<DepthImageFrameReadyEventArgs>(kinect_DepthFrameReady);
+            //this.kinect.DepthFrameReady += new EventHandler<DepthImageFrameReadyEventArgs>(kinect_DepthFrameReady);
             this.kinect.ColorFrameReady += new EventHandler<ColorImageFrameReadyEventArgs>(kinect_ColorFrameReady);
 
-            this.kinect.AudioSource.AutomaticGainControlEnabled = false;
-            this.kinect.AudioSource.SoundSourceAngleChanged += new EventHandler<SoundSourceAngleChangedEventArgs>(AudioSource_SoundSourceAngleChanged);
+            //this.kinect.AudioSource.AutomaticGainControlEnabled = false;
+            //this.kinect.AudioSource.SoundSourceAngleChanged += new EventHandler<SoundSourceAngleChangedEventArgs>(AudioSource_SoundSourceAngleChanged);
+
+            logLine("Loading haar classifier");
+            this.haar = new HaarCascade("C:/Emgu/emgucv-windows-x86 2.4.0.1717/opencv/data/haarcascades/haarcascade_frontalface_default.xml");
+            logLine("Done loading haar classifier");
 
             this.kinect.Start();
             logLine("Kinect initialized");
@@ -174,19 +187,53 @@ namespace KinectAudioTracker
             }
             var imageFrame = this.currentColorFrame = e.OpenColorImageFrame();
 
-            if (imageFrame != null)
+            
+        }
+
+        private void processColorFrame(ColorImageFrame frame, ref MainWindow t)
+        {
+            if (frame != null)
             {
-                var colorPixels = new byte[this.kinect.ColorStream.FramePixelDataLength];
-                imageFrame.CopyPixelDataTo(colorPixels);
+                var colorPixels = new byte[t.kinect.ColorStream.FramePixelDataLength];
+                frame.CopyPixelDataTo(colorPixels);
 
                 // Draw the color bitmap to the screen
-                colorBitmap.WritePixels(new Int32Rect(0, 0, colorBitmap.PixelWidth, colorBitmap.PixelHeight), colorPixels,
-                    colorBitmap.PixelWidth * sizeof(int), 0);
+                t.colorBitmap.WritePixels(new Int32Rect(0, 0, t.colorBitmap.PixelWidth, t.colorBitmap.PixelHeight), colorPixels,
+                    t.colorBitmap.PixelWidth * sizeof(int), 0);
+
+                var faces = detectFaces(colorFrameToImage(this.currentColorFrame).Convert<Gray, byte>(), t.haar);
+                foreach (var face in faces)
+                {
+                    t.logLine(face.Location.ToString());
+                }
             }
+        }
+
+        private Rectangle[] detectFaces(Image<Gray, byte> image, HaarCascade haar)
+        {
+            var faces = haar.Detect(image);
+            IEnumerable<Rectangle> rects =
+                from f in faces
+                select f.rect;
+            return rects.ToArray<Rectangle>();
+        }
+
+        private BitmapImage bitmapToBitmapImage(Bitmap b)
+        {
+            MemoryStream ms = new MemoryStream();
+            b.Save(ms, ImageFormat.Png);
+            ms.Position = 0;
+            BitmapImage bi = new BitmapImage();
+            bi.BeginInit();
+            bi.StreamSource = ms;
+            bi.EndInit();
+
+            return bi;
         }
 
         private void kinect_DepthFrameReady(object sender, DepthImageFrameReadyEventArgs e)
         {
+            return;
             if (this.kinect == null)
                 return;
 
@@ -275,6 +322,28 @@ namespace KinectAudioTracker
                     }
                 }
             }
+        }
+
+        private Image<Bgr, byte> colorFrameToImage(ColorImageFrame frame)
+        {
+            var colorPixels = new byte[this.kinect.ColorStream.FramePixelDataLength];
+            this.currentColorFrame.CopyPixelDataTo(colorPixels);
+
+            var height = frame.Height;
+            var width = frame.Width;
+            var arrangedPixels = new byte[height, width, 3];
+
+            var pixelCount = 0;
+            for (int i = 0; i < colorPixels.Length; i++)
+            {
+                arrangedPixels[pixelCount / width, pixelCount % width, 0] = colorPixels[i++];
+                arrangedPixels[pixelCount / width, pixelCount % width, 1] = colorPixels[i++];
+                arrangedPixels[pixelCount / width, pixelCount % width, 2] = colorPixels[i++];
+                ++i;
+                ++pixelCount;
+            }
+
+            return new Image<Bgr, byte>(arrangedPixels);
         }
 
         private static double radToDeg(double rad)

@@ -338,7 +338,6 @@ namespace KinectAudioTracker
                 arrangedPixels[pixelCount / width, pixelCount % width, 0] = colorPixels[i++];
                 arrangedPixels[pixelCount / width, pixelCount % width, 1] = colorPixels[i++];
                 arrangedPixels[pixelCount / width, pixelCount % width, 2] = colorPixels[i++];
-                ++i;
                 ++pixelCount;
             }
 

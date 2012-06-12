@@ -187,35 +187,34 @@ namespace KinectAudioTracker
             }
             var imageFrame = this.currentColorFrame = e.OpenColorImageFrame();
 
-            
-        }
-
-        private void processColorFrame(ColorImageFrame frame, ref MainWindow t)
-        {
-            if (frame != null)
+            if (imageFrame != null)
             {
-                var colorPixels = new byte[t.kinect.ColorStream.FramePixelDataLength];
-                frame.CopyPixelDataTo(colorPixels);
+                var colorPixels = new byte[this.kinect.ColorStream.FramePixelDataLength];
+                imageFrame.CopyPixelDataTo(colorPixels);
 
                 // Draw the color bitmap to the screen
-                t.colorBitmap.WritePixels(new Int32Rect(0, 0, t.colorBitmap.PixelWidth, t.colorBitmap.PixelHeight), colorPixels,
-                    t.colorBitmap.PixelWidth * sizeof(int), 0);
+                colorBitmap.WritePixels(new Int32Rect(0, 0, colorBitmap.PixelWidth, colorBitmap.PixelHeight), colorPixels,
+                    colorBitmap.PixelWidth * sizeof(int), 0);
 
-                var faces = detectFaces(colorFrameToImage(this.currentColorFrame).Convert<Gray, byte>(), t.haar);
-                foreach (var face in faces)
-                {
-                    t.logLine(face.Location.ToString());
-                }
+                ThreadPool.QueueUserWorkItem(detectFacesAndLog, this);
             }
         }
 
         private Rectangle[] detectFaces(Image<Gray, byte> image, HaarCascade haar)
         {
-            var faces = haar.Detect(image);
+            var faces = haar.Detect(image, 1.2, 2, Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING, new Size(20, 20), new Size(50, 50));
             IEnumerable<Rectangle> rects =
                 from f in faces
                 select f.rect;
             return rects.ToArray<Rectangle>();
+        }
+
+        private static void detectFacesAndLog(object data)
+        {
+            var t = (MainWindow)data;
+            var faces = t.detectFaces(t.colorFrameToImage(t.currentColorFrame).Convert<Gray, byte>(), t.haar);
+            if (faces.Length > 0)
+                t.logLine("Face detected.");
         }
 
         private BitmapImage bitmapToBitmapImage(Bitmap b)

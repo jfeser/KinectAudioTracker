@@ -458,6 +458,9 @@ namespace KinectAudioTracker
         private bool[] hasPixelPosition;
         private double[] playerAngles;
 
+        private Vector3[] playerWorldPositions;
+        private bool[] hasUpdatedWorldPositions;
+
         private int playerCount;
 
         public PlayerLocation()
@@ -515,34 +518,40 @@ namespace KinectAudioTracker
             return playerPixelPositions[playerNumber];
         }
 
-        public double getWorldX(int playerNumber, DepthImageFrame context)
+        public void setWorldPositions(DepthImageFrame context)
         {
-            if (!checkPlayerNumber(playerNumber))
-                throw new ArgumentOutOfRangeException();
-            if (context == null)
-                throw new ArgumentNullException();
+            for (int i = 0; i < this.playerCount; i++)
+            {
+                if (hasPixelPositionData(i))
+                {
+                    var p = getPixelPosition(i);
 
-            return context.MapToSkeletonPoint(playerLocations[playerNumber].X, playerLocations[playerNumber].Y).X;
+                    if (playerWorldPositions[i] == null)
+                        playerWorldPositions[i] = new Vector3();
+
+                    playerWorldPositions[i].X = context.MapToSkeletonPoint(p.X, p.Y).X;
+                    playerWorldPositions[i].Y = context.MapToSkeletonPoint(p.X, p.Y).Y;
+                    playerWorldPositions[i].Z = context.MapToSkeletonPoint(p.X, p.Y).Z;
+
+                    hasUpdatedWorldPositions[i] = true;
+                }
+            }
         }
 
-        public double getWorldY(int playerNumber, DepthImageFrame context)
+        public Vector3 getWorldPosition(int playerNumber)
         {
-            if (!checkPlayerNumber(playerNumber))
+            if (!checkPlayerNumber(playerNumber) && hasWorldPositionData(playerNumber))
                 throw new ArgumentOutOfRangeException();
-            if (context == null)
-                throw new ArgumentNullException();
 
-            return context.MapToSkeletonPoint(playerLocations[playerNumber].X, playerLocations[playerNumber].Y).Y;
+            return playerWorldPositions[playerNumber];
         }
 
-        public double getWorldZ(int playerNumber, DepthImageFrame context)
+        public bool hasWorldPositionData(int playerNumber)
         {
             if (!checkPlayerNumber(playerNumber))
                 throw new ArgumentOutOfRangeException();
-            if (context == null)
-                throw new ArgumentNullException();
 
-            return context.MapToSkeletonPoint(playerLocations[playerNumber].X, playerLocations[playerNumber].Y).Z;
+            return hasUpdatedWorldPositions[playerNumber];
         }
 
         public void setAngle(int playerNumber, double angle)
@@ -582,7 +591,9 @@ namespace KinectAudioTracker
         public void clear()
         {
             this.playerPixelPositions = new Rectangle[playerCount];
+            this.playerWorldPositions = new Vector3[playerCount];
             this.hasPixelPosition = new bool[playerCount];
+            this.hasUpdatedWorldPositions = new bool[playerCount];
 
             this.playerAngles = new double[playerCount];
             for (int i = 0; i < playerCount; ++i)

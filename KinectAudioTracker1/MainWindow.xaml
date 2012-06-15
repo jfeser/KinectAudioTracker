@@ -19,7 +19,8 @@
             </TabItem>
             <TabItem Header="Audio source" Name="playerLoc">
                 <Grid>
-                    <local:AngleDisplay x:Name="audioAngleDisplay" />
+                    <local:AngleDisplay x:Name="audioAngleDisplay" Margin="157,6,156,325" />
+                    <local:ImageCanvas Height="313" HorizontalAlignment="Left" Margin="6,138,0,0" x:Name="playerField" VerticalAlignment="Top" Width="619" />
                 </Grid>
             </TabItem>
             <TabItem Header="Color view" Name="colorView">

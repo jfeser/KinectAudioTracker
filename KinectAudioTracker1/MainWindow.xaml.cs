@@ -26,9 +26,6 @@ namespace KinectAudioTracker
         private KinectDepthHandler depthHandler;
         private KinectColorHandler colorHandler;
         private KinectSoundHandler soundHandler;
-        private WriteableBitmap depthBitmap;
-
-        private WriteableBitmap colorBitmap;
 
         private readonly Vector3 kinectMin = new Vector3(-2.2, -1.6, 0);
         private readonly Vector3 kinectMax = new Vector3(2.2, 1.6, 4);
@@ -38,7 +35,8 @@ namespace KinectAudioTracker
         private DispatcherTimer readyTimer;
         private int tickCount;
 
-
+        private WriteableBitmap depthBitmap;
+        public WriteableBitmap colorBitmap;
         private Storage dataStorage;
 
         public MainWindow()
@@ -175,17 +173,38 @@ namespace KinectAudioTracker
             }
         }
 
+        private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            initializeKinect();
+        }
 
-            {
-            }
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            uninitializeKinect();
+        }
 
+        private void start_Click(object sender, RoutedEventArgs e)
+        {
+            if (!this.audioOn)
             {
+                startAudio();
             }
         }
 
+        private void stop_Click(object sender, RoutedEventArgs e)
         {
+            if (this.audioOn)
+            {
+                stopAudio();
+            }
         }
+
+        public void logLine(string line)
+        {
+            this.listBox1.Items.Add(line);
+        }
+    }
+
     public class ImageCanvas : Canvas
     {
         private readonly Vector3 kinectMin = new Vector3(-2.2, -1.6, 0);
@@ -402,42 +421,24 @@ namespace KinectAudioTracker
         }
 
         public static double radToDeg(double rad)
-
-        private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             return rad * (180 / Math.PI);
-            initializeKinect();
         }
 
         public static T clamp<T>(T min, T x, T max) where T : System.IComparable<T>
-        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             if (x.CompareTo(min) < 0)
-            uninitializeKinect();
-        }
-
-        private void start_Click(object sender, RoutedEventArgs e)
-        {
-            if (!this.audioOn)
             {
                 return min;
-                startAudio();
             }
             if (x.CompareTo(max) > 0)
-        }
-
-        private void stop_Click(object sender, RoutedEventArgs e)
-        {
-            if (this.audioOn)
             {
                 return max;
-                stopAudio();
             }
             return x;
         }
 
         public static BitmapImage bitmapToBitmapImage(Bitmap b)
-        private void logLine(string line)
         {
             MemoryStream ms = new MemoryStream();
             b.Save(ms, ImageFormat.Png);
@@ -448,28 +449,28 @@ namespace KinectAudioTracker
             bi.EndInit();
 
             return bi;
-            this.listBox1.Items.Add(line);
         }
     }
 
-    public class PlayerLocation
+    class PlayerPosition
     {
         private Rectangle[] playerPixelPositions;
         private bool[] hasPixelPosition;
-        private double[] playerAngles;
 
         private Vector3[] playerWorldPositions;
         private bool[] hasUpdatedWorldPositions;
 
+        private double[] playerAngles;
+        
         private int playerCount;
 
-        public PlayerLocation()
+        public PlayerPosition()
         {
             this.playerCount = 7;
             clear();
         }
 
-        public PlayerLocation(int playerCount)
+        public PlayerPosition(int playerCount)
         {
             this.playerCount = playerCount;
             clear();

@@ -30,6 +30,8 @@ namespace KinectAudioTracker
 
         private WriteableBitmap colorBitmap;
 
+        private readonly Vector3 kinectMin = new Vector3(-2.2, -1.6, 0);
+        private readonly Vector3 kinectMax = new Vector3(2.2, 1.6, 4);
 
         private bool audioOn;
 
@@ -188,27 +190,91 @@ namespace KinectAudioTracker
         {
         }
 
+    class Vector3
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Z { get; set; }
 
-        }
+        public static readonly Vector3 Infinity = new Vector3(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity);
+        public static readonly Vector3 Zero = new Vector3();
 
+        public Vector3()
         {
-
-
+            X = 0.0f;
+            Y = 0.0f;
+            Z = 0.0f;
         }
-
+        
+        public Vector3(double x, double y, double z)
         {
-
-
-
-
-
-
-
-
+            this.X = x;
+            this.Y = y;
+            this.Z = z;
         }
 
+        public Vector3 Clone()
         {
+            return new Vector3(this.X, this.Y, this.Z);
         }
+
+        public static Vector3 operator +(Vector3 v1, Vector3 v2)
+        {
+            return new Vector3(v1.X+v2.X, v1.Y+v2.Y, v1.Z+v2.Z);
+        }
+
+        public static Vector3 operator -(Vector3 v1, Vector3 v2)
+        {
+            return new Vector3(v1.X-v2.X, v1.Y-v2.Y, v1.Z-v2.Z);
+        }
+
+        public static Vector3 operator /(Vector3 v1, Vector3 v2)
+        {
+            return new Vector3(v1.X/v2.X, v1.Y/v2.Y, v1.Z/v2.Z);
+        }
+
+        public static Vector3 operator *(Vector3 v1, Vector3 v2)
+        {
+            return new Vector3(v1.X*v2.X, v1.Y*v2.Y, v1.Z*v2.Z);
+        }
+
+        public static Vector3 operator -(Vector3 v)
+        {
+            return new Vector3(-v.X, -v.Y, -v.Z);
+        }
+
+        public static Vector3 Clamp(Vector3 min, Vector3 x, Vector3 max)
+        {
+            var v = x.Clone();
+
+            if(x.X < min.X) { v.X = min.X; }
+            if(x.Y < min.Y) { v.Y = min.Y; }
+            if(x.Z < min.Z) { v.Z = min.Z; }
+
+            if(x.X > max.X) { v.X = max.X; }
+            if(x.Y > max.Y) { v.Y = max.Y; }
+            if(x.Z > max.Z) { v.Z = max.Z; }
+
+            return v;
+        }
+
+        public static Vector3 Abs(Vector3 v)
+        {
+            var w = v.Clone();
+            if(v.X < 0) { w.X = -w.X; }
+            if(v.Y < 0) { w.Y = -w.Y; }
+            if(v.Z < 0) { w.Z = -w.Z; }
+
+            return w;
+        }
+
+        public static Vector3 ScaleVector(Vector3 initMin, Vector3 initMax, Vector3 outMax, Vector3 input)
+        {
+            var v = Clamp(initMin, input, initMax);
+            v = v - initMin;
+            return v / Abs(initMax - initMin) * outMax;
+        }
+    }
 
     static class Util
     {

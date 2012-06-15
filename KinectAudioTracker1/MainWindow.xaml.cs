@@ -158,15 +158,8 @@ namespace KinectAudioTracker
 
         {
 
-        }
-
-        private static T clamp<T>(T min, T x, T max) where T : System.IComparable<T>
-        {
-            if (x.CompareTo(min) < 0)
             {
-                return min;
             }
-            if (x.CompareTo(max) > 0)
         private void uninitializeKinect()
         {
             if (this.kinect != null)
@@ -177,9 +170,7 @@ namespace KinectAudioTracker
 
                 this.kinect.Stop();
                 this.kinect = null;
-                return max;
             }
-            return x;
         }
 
         {
@@ -197,17 +188,7 @@ namespace KinectAudioTracker
         {
         }
 
-        private BitmapImage bitmapToBitmapImage(Bitmap b)
-        {
-            MemoryStream ms = new MemoryStream();
-            b.Save(ms, ImageFormat.Png);
-            ms.Position = 0;
-            BitmapImage bi = new BitmapImage();
-            bi.BeginInit();
-            bi.StreamSource = ms;
-            bi.EndInit();
 
-            return bi;
         }
 
         {
@@ -229,13 +210,21 @@ namespace KinectAudioTracker
         {
         }
 
+    static class Util
+    {
+        public static Rectangle[] detectFaces(Image<Gray, byte> image, HaarCascade haar)
         {
+            var faces = haar.Detect(image, 1.2, 2, Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING, new Size(20, 20), new Size(50, 50));
+            IEnumerable<Rectangle> rects =
+                from f in faces
+                select f.rect;
+            return rects.ToArray<Rectangle>();
         }
 
-        private Image<Bgr, byte> colorFrameToImage(ColorImageFrame frame)
+        public static Image<Bgr, byte> colorFrameToImage(ColorImageFrame frame)
         {
-            var colorPixels = new byte[this.kinect.ColorStream.FramePixelDataLength];
-            this.currentColorFrame.CopyPixelDataTo(colorPixels);
+            var colorPixels = new byte[frame.PixelDataLength];
+            frame.CopyPixelDataTo(colorPixels);
 
             var height = frame.Height;
             var width = frame.Width;
@@ -253,23 +242,47 @@ namespace KinectAudioTracker
             return new Image<Bgr, byte>(arrangedPixels);
         }
 
-        private static double radToDeg(double rad)
+        public static void drawBoundingBox(Rectangle r, WriteableBitmap b, Color c, int pixelWidth)
         {
-            return rad * (180 / Math.PI);
+            Util.drawRect(new Rectangle(r.X, r.Y, r.Width, pixelWidth), b, c);
+            Util.drawRect(new Rectangle(r.X, r.Y, pixelWidth, r.Height), b, c);
+            Util.drawRect(new Rectangle(r.X, r.Bottom-pixelWidth, r.Width, pixelWidth), b, c);
+            Util.drawRect(new Rectangle(r.Right-pixelWidth, r.Y, pixelWidth, r.Height), b, c);
         }
 
-        private static void drawRect(Rectangle r, ref WriteableBitmap b, Color c)
+        public static void drawRect(Rectangle r, WriteableBitmap b, Color c)
         {
-            for (int i = r.Y; i < r.Y + r.Height; ++i)
+            if (r.X < 0 || r.Right >= b.PixelWidth || r.Y < 0 || r.Bottom >= b.PixelHeight)
+                return;
+
+            b.Lock();
+
+            // Compute the pixel's color.
+            int color_data = c.R << 16; // R
+            color_data |= c.G << 8;   // G
+            color_data |= c.B << 0;   // B
+
+            unsafe
             {
-                for (int j = r.X; j < r.X + r.Width; ++j)
+                for (int j = r.Y; j < r.Bottom; ++j)
                 {
-                    drawPixel(j, i, ref b, c);
+                    for (int i = r.X; i < r.Right; ++i)
+                    {
+                        int backBuffer = (int)b.BackBuffer;
+
+                        backBuffer += j * b.BackBufferStride;
+                        backBuffer += i * 4;
+
+                        *((int*)backBuffer) = color_data;
+                    }
                 }
             }
+
+            b.AddDirtyRect(new Int32Rect(r.X, r.Y, r.Width, r.Height));
+            b.Unlock();
         }
 
-        private static void drawPixel(int x, int y, ref WriteableBitmap b, Color c)
+        public static void drawPixel(int x, int y, ref WriteableBitmap b, Color c)
         {
             if (x < 0 || x >= b.PixelWidth || y < 0 || y >= b.PixelHeight)
             {
@@ -297,14 +310,18 @@ namespace KinectAudioTracker
             b.Unlock();
         }
 
+        public static double radToDeg(double rad)
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            return rad * (180 / Math.PI);
             initializeKinect();
         }
 
+        public static T clamp<T>(T min, T x, T max) where T : System.IComparable<T>
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            if (x.CompareTo(min) < 0)
             uninitializeKinect();
         }
 
@@ -312,20 +329,34 @@ namespace KinectAudioTracker
         {
             if (!this.audioOn)
             {
+                return min;
                 startAudio();
             }
+            if (x.CompareTo(max) > 0)
         }
 
         private void stop_Click(object sender, RoutedEventArgs e)
         {
             if (this.audioOn)
             {
+                return max;
                 stopAudio();
             }
+            return x;
         }
 
+        public static BitmapImage bitmapToBitmapImage(Bitmap b)
         private void logLine(string line)
         {
+            MemoryStream ms = new MemoryStream();
+            b.Save(ms, ImageFormat.Png);
+            ms.Position = 0;
+            BitmapImage bi = new BitmapImage();
+            bi.BeginInit();
+            bi.StreamSource = ms;
+            bi.EndInit();
+
+            return bi;
             this.listBox1.Items.Add(line);
         }
     }

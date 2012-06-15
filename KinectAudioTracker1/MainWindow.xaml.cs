@@ -454,10 +454,10 @@ namespace KinectAudioTracker
 
     public class PlayerLocation
     {
-        private Point[] playerLocations;
+        private Rectangle[] playerPixelPositions;
+        private bool[] hasPixelPosition;
         private double[] playerAngles;
 
-        private int[] averageCount;
         private int playerCount;
 
         public PlayerLocation()
@@ -477,39 +477,42 @@ namespace KinectAudioTracker
             if (!checkPlayerNumber(playerNumber))
                 throw new ArgumentOutOfRangeException();
 
-            ++averageCount[playerNumber];
-            playerLocations[playerNumber].X += x;
-            playerLocations[playerNumber].Y += y;
+            if (!hasPixelPosition[playerNumber])
+            {
+                playerPixelPositions[playerNumber].X = x;
+                playerPixelPositions[playerNumber].Y = y;
+                playerPixelPositions[playerNumber].Width = 0;
+                playerPixelPositions[playerNumber].Height = 0;
+            }
+
+            playerPixelPositions[playerNumber].X = Math.Min(playerPixelPositions[playerNumber].X, x);
+            playerPixelPositions[playerNumber].Y = Math.Min(playerPixelPositions[playerNumber].Y, y);
+
+            if (x > playerPixelPositions[playerNumber].Right)
+                playerPixelPositions[playerNumber].Width = x - playerPixelPositions[playerNumber].X;
+
+            if (y > playerPixelPositions[playerNumber].Bottom)
+                playerPixelPositions[playerNumber].Height = y - playerPixelPositions[playerNumber].Y;
+
+            hasPixelPosition[playerNumber] = true;
+            hasUpdatedWorldPositions[playerNumber] = false;
         }
 
-        public int getPixelX(int playerNumber)
+        public Point getPixelPosition(int playerNumber)
         {
-            if (!checkPlayerNumber(playerNumber))
+            if (!checkPlayerNumber(playerNumber) || !hasPixelPositionData(playerNumber))
                 throw new ArgumentOutOfRangeException();
 
-            if (averageCount[playerNumber] == 0)
-            {
-                return 0;
-            }
-            else
-            {
-                return playerLocations[playerNumber].X / averageCount[playerNumber];
-            }
+            return new Point(playerPixelPositions[playerNumber].Width / 2 + playerPixelPositions[playerNumber].X,
+                playerPixelPositions[playerNumber].Height / 2 + playerPixelPositions[playerNumber].Y);
         }
 
-        public int getPixelY(int playerNumber)
+        public Rectangle getPlayerBoundingBox(int playerNumber)
         {
-            if (!checkPlayerNumber(playerNumber))
+            if (!checkPlayerNumber(playerNumber) || !hasPixelPositionData(playerNumber))
                 throw new ArgumentOutOfRangeException();
 
-            if (averageCount[playerNumber] == 0)
-            {
-                return 0;
-            }
-            else
-            {
-                return playerLocations[playerNumber].Y / averageCount[playerNumber];
-            }
+            return playerPixelPositions[playerNumber];
         }
 
         public double getWorldX(int playerNumber, DepthImageFrame context)
@@ -578,8 +581,8 @@ namespace KinectAudioTracker
 
         public void clear()
         {
-            this.playerLocations = new Point[playerCount];
-            this.averageCount = new int[playerCount];
+            this.playerPixelPositions = new Rectangle[playerCount];
+            this.hasPixelPosition = new bool[playerCount];
 
             this.playerAngles = new double[playerCount];
             for (int i = 0; i < playerCount; ++i)
@@ -588,12 +591,9 @@ namespace KinectAudioTracker
             }
         }
 
-        public bool hasPositionData(int playerNumber)
+        public bool hasPixelPositionData(int playerNumber)
         {
-            if (!checkPlayerNumber(playerNumber))
-                return false;
-
-            return averageCount[playerNumber] != 0;
+            return checkPlayerNumber(playerNumber) && hasPixelPosition[playerNumber];
         }
 
         public bool hasAngleData(int playerNumber)
@@ -606,7 +606,7 @@ namespace KinectAudioTracker
 
         private bool checkPlayerNumber(int n)
         {
-            if (n <= 0 || n >= this.playerLocations.Length)
+            if (n <= 0 || n >= this.playerPixelPositions.Length)
             {
                 return false;
             }

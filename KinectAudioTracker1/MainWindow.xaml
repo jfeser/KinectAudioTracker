@@ -14,7 +14,7 @@
         <TabControl Height="489" HorizontalAlignment="Left" Margin="244,12,0,0" Name="tabControl1" VerticalAlignment="Top" Width="641" Grid.RowSpan="3">
             <TabItem Header="Depth view" Name="depthView">
                 <Grid>
-                    <Image Height="446" HorizontalAlignment="Left" Margin="6,6,0,0" Name="colorImage" Stretch="Fill" VerticalAlignment="Top" Width="619" />
+                    <Image Height="446" HorizontalAlignment="Left" Margin="6,6,0,0" Name="depthImage" Stretch="Fill" VerticalAlignment="Top" Width="619" />
                 </Grid>
             </TabItem>
             <TabItem Header="Audio source" Name="playerLoc">
@@ -24,7 +24,7 @@
             </TabItem>
             <TabItem Header="Color view" Name="colorView">
                 <Grid>
-                    <Image Height="446" HorizontalAlignment="Left" Margin="6,5,0,0" Name="depthImage" Stretch="Fill" VerticalAlignment="Top" Width="619" />
+                    <Image Height="446" HorizontalAlignment="Left" Margin="6,5,0,0" Name="colorImage" Stretch="Fill" VerticalAlignment="Top" Width="619" />
                 </Grid>
             </TabItem>
         </TabControl>

@@ -19,9 +19,6 @@ namespace KinectAudioTracker
     using Emgu.CV.Util;
     using Emgu.CV.Structure;
 
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
         private KinectSensor kinect;
@@ -47,9 +44,6 @@ namespace KinectAudioTracker
             InitializeComponent();
         }
 
-        /// <summary>
-        /// Initializes the kinect.
-        /// </summary>
         private void initializeKinect()
         {
             // Get the first initialized Kinect sensor.
@@ -133,11 +127,6 @@ namespace KinectAudioTracker
             logLine("Kinect audio initialized.");
         }
 
-        /// <summary>
-        /// Handles the Tick event of the kinect initialization timer.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="e">The <see cref="System.EventArgs"/> instance containing the event data.</param>
         void readyTimer_Tick(object sender, EventArgs e)
         {
             if (this.tickCount == 4)
@@ -152,9 +141,6 @@ namespace KinectAudioTracker
             }
         }
 
-        /// <summary>
-        /// Starts the kinect audio source.
-        /// </summary>
         private void startAudio()
         {
             var audioSource = this.kinect.AudioSource;
@@ -164,9 +150,6 @@ namespace KinectAudioTracker
             this.audioOn = true;
         }
 
-        /// <summary>
-        /// Stops the kinect audio source.
-        /// </summary>
         private void stopAudio()
         {
             this.kinect.AudioSource.Stop();
@@ -453,12 +436,6 @@ namespace KinectAudioTracker
             return playerAngles[playerNumber];
         }
 
-        /// <summary>
-        /// Finds the player whos angle from the Kinect is the closest to the provided angle and is within the difference cutoff.
-        /// </summary>
-        /// <param name="angle"></param>
-        /// <param name="cutoff"></param>
-        /// <returns></returns>
         public int getClosestPlayerByAngle(double angle, double cutoff)
         {
             double min_difference = double.PositiveInfinity;

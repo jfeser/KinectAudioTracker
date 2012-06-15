@@ -11,6 +11,7 @@ namespace KinectAudioTracker
     using System.Speech.Recognition;
     using System.Threading;
     using System.Windows.Threading;
+    using System.Windows.Controls;
     using System.Collections.Generic;
     using System.IO;
     using Microsoft.Kinect;
@@ -84,12 +85,16 @@ namespace KinectAudioTracker
 
             this.kinect.Start();
             logLine("Kinect initialized");
+
+            this.playerField.t = this;
             
             // Wait four seconds after initialization to start audio
             this.readyTimer = new DispatcherTimer();
             this.readyTimer.Tick += new EventHandler(readyTimer_Tick);
             this.readyTimer.Interval = new TimeSpan(0, 0, 1);
             this.readyTimer.Start();
+        }
+
         void soundHandler_newSoundData()
         {
             audioAngleDisplay.rotTx.Angle = -dataStorage.soundSourceAngle;
@@ -124,7 +129,6 @@ namespace KinectAudioTracker
                 this.dataStorage.depthPixels, depthBitmap.PixelWidth * sizeof(int), 0);
 
             drawPlayers();
-            logLine("Kinect audio initialized.");
         }
 
         void readyTimer_Tick(object sender, EventArgs e)
@@ -156,10 +160,35 @@ namespace KinectAudioTracker
             this.audioOn = false;
         }
 
+        private void drawPlayers()
         {
+            //var talkingPlayer = locations.getClosestPlayerByAngle(this.soundSourceAngle, 50.0);
 
+            playerField.Children.Clear();
+            for (int i = 1; i < 7; ++i)
             {
+                if (dataStorage.playerLocations.hasPixelPositionData(i))
+                {
+                    //System.Drawing.Point p = dataStorage.playerLocations.getPixelPosition(i);
+                    Rectangle rect = dataStorage.playerLocations.getPlayerBoundingBox(i);
+                    Util.drawRect(rect, this.depthBitmap, System.Drawing.Color.Orange);
+                }
+                if (dataStorage.playerLocations.hasWorldPositionData(i))
+                {
+                    var v = dataStorage.playerLocations.getWorldPosition(i);
+                    var drawV = Vector3.ScaleVector(kinectMin, kinectMax, new Vector3(playerField.Width, 0, playerField.Height), v);
+                    var rect = new System.Windows.Shapes.Rectangle
+                    {
+                        Stroke = System.Windows.Media.Brushes.Black,
+                        StrokeThickness = 50
+                    };
+                    Canvas.SetLeft(rect, drawV.X);
+                    Canvas.SetTop(rect, drawV.Z);
+                    playerField.Children.Add(rect);
+                }
             }
+        }
+
         private void uninitializeKinect()
         {
             if (this.kinect != null)

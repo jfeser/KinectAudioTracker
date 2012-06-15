@@ -186,9 +186,34 @@ namespace KinectAudioTracker
 
         {
         }
+    public class ImageCanvas : Canvas
+    {
+        private readonly Vector3 kinectMin = new Vector3(-2.2, -1.6, 0);
+        private readonly Vector3 kinectMax = new Vector3(2.2, 1.6, 4);
+        public MainWindow t;
 
+        protected override void OnRender(DrawingContext dc)
         {
+            var dataStorage = Storage.Instance;
+
+            foreach (var face in dataStorage.faceRectangles)
+            {
+                for (int i = 0; i < 7; ++i)
+                {
+                    if (dataStorage.playerLocations.hasPixelPositionData(i))
+                    {
+                        var overlap = Rectangle.Intersect(face, dataStorage.playerLocations.getPlayerBoundingBox(i));
+                        if (overlap != new Rectangle())
+                        {
+                            var faceBitmap = new CroppedBitmap(t.colorBitmap, new Int32Rect(face.X, face.Y, face.Width, face.Height));
+                            dc.DrawImage(faceBitmap, new Rect(100, 100, face.Width, face.Height));
+                        }
+                    }
+                }
+            }
+            base.OnRender(dc);
         }
+    }
 
     class Vector3
     {

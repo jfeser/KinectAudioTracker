@@ -374,7 +374,7 @@ namespace KinectAudioTracker
     {
         public static Rectangle[] detectFaces(Image<Gray, byte> image, HaarCascade haar)
         {
-            var faces = haar.Detect(image, 1.2, 2, Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING, new Size(20, 20), new Size(50, 50));
+            var faces = haar.Detect(image, 1.2, 3, Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING, new Size(20, 20), new Size(50, 50));
             IEnumerable<Rectangle> rects =
                 from f in faces
                 select f.rect;

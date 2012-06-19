@@ -28,7 +28,7 @@
                 </Grid>
             </TabItem>
         </TabControl>
-        <Button Content="Stop recognizer" Height="23" HorizontalAlignment="Right" Margin="0,162,659,0" Name="stop" VerticalAlignment="Top" Width="105" Grid.Row="2" Click="stop_Click" />
-        <Button Content="Start recognizer" Height="23" HorizontalAlignment="Left" Margin="12,162,0,0" Name="start" VerticalAlignment="Top" Width="115" Grid.Row="2" Click="start_Click" />
+        <Button Content="Stop detection" Height="23" HorizontalAlignment="Right" Margin="0,162,659,0" Name="stop" VerticalAlignment="Top" Width="105" Grid.Row="2" Click="stop_Click" />
+        <Button Content="Start detection" Height="23" HorizontalAlignment="Left" Margin="12,162,0,0" Name="start" VerticalAlignment="Top" Width="115" Grid.Row="2" Click="start_Click" />
     </Grid>
 </Window>

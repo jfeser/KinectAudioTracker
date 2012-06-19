@@ -174,10 +174,12 @@ namespace KinectAudioTracker
 
         private void start_Click(object sender, RoutedEventArgs e)
         {
+            colorHandler.enableFaceTracking();
         }
 
         private void stop_Click(object sender, RoutedEventArgs e)
         {
+            colorHandler.disableFaceTracking();
         }
 
         public void logLine(string line)
@@ -771,6 +773,7 @@ namespace KinectAudioTracker
         private Storage dataStorage = Storage.Instance;
         private KinectSensor kinect;
         private Dispatcher uiDispatcher;
+        private bool isFaceTracking = true;
 
         private Action newColorDataHandler;
         public event Action newColorData
@@ -793,6 +796,16 @@ namespace KinectAudioTracker
             worker = new Thread(() => run(this));
             worker.Name = "color handler";
             worker.Start();
+        }
+
+        public void enableFaceTracking()
+        {
+            isFaceTracking = true;
+        }
+
+        public void disableFaceTracking()
+        {
+            isFaceTracking = false;
         }
 
         private static void run(object data)
@@ -824,7 +837,9 @@ namespace KinectAudioTracker
                 if (imageFrame != null)
                 {
                     imageFrame.CopyPixelDataTo(t.dataStorage.colorPixels);
-                    t.dataStorage.faceRectangles = Util.detectFaces(Util.colorFrameToImage(imageFrame).Convert<Gray, byte>(), haar);
+
+                    if(t.isFaceTracking)
+                        t.dataStorage.faceRectangles = Util.detectFaces(Util.colorFrameToImage(imageFrame).Convert<Gray, byte>(), haar);
 
                     t.uiDispatcher.BeginInvoke(t.newColorDataHandler);
                     imageFrame.Dispose();

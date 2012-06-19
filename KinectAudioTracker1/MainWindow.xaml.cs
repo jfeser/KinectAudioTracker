@@ -274,6 +274,102 @@ namespace KinectAudioTracker
         }
     }
 
+    class RingBuffer<T> : IEnumerable<T>
+    {
+        private T[] buffer;
+        private int bufferLength;
+        private int head = -1;
+
+        public RingBuffer(int bufferLength)
+        {
+            this.bufferLength = bufferLength;
+            buffer = new T[bufferLength];
+        }
+
+        public void Push(T data)
+        {
+            head = (head + 1) % bufferLength;
+            buffer[head] = data;
+        }
+
+        public T Pop()
+        {
+            var data = buffer[head];
+            head = (head - 1) % bufferLength;
+            return data;
+        }
+
+        public T Head()
+        {
+            return buffer[head];
+        }
+
+        public void Clear()
+        {
+            buffer = new T[bufferLength];
+        }
+
+        public System.Collections.Generic.IEnumerator<T> GetEnumerator()
+        {
+            return (IEnumerator<T>)new RingBufferEnum<T>(buffer, head);
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    class RingBufferEnum<T> : IEnumerator<T>
+    {
+        private T[] buffer;
+        private int head, dataRead = 0, i;
+
+        public RingBufferEnum(T[] buffer, int head)
+        {
+            this.buffer = buffer;
+            this.head = this.i = head;
+        }
+
+        public T Current
+        {
+            get
+            {
+                return buffer[i];
+            }
+        }
+
+        object System.Collections.IEnumerator.Current
+        {
+            get
+            {
+                return buffer[i];
+            }
+        }
+
+        public bool MoveNext()
+        {
+            ++dataRead;
+            if (dataRead >= buffer.Length)
+                return false;
+            else
+            {
+                i = (i + 1) % buffer.Length;
+                return true;
+            }
+        }
+
+        public void Reset()
+        {
+            i = head;
+            dataRead = 0;
+        }
+
+        void System.IDisposable.Dispose()
+        {
+        }
+    }
+
     static class Util
     {
         public static Rectangle[] detectFaces(Image<Gray, byte> image, HaarCascade haar)
@@ -408,8 +504,10 @@ namespace KinectAudioTracker
 
     class PlayerPosition
     {
-        private Rectangle[] playerPixelPositions;
+        private RingBuffer<Rectangle>[] playerPixelPositions;
+        private int historyLength;
         private bool[] hasPixelPosition;
+        private bool[] hasHistory;
 
         private Vector3[] playerWorldPositions;
         private bool[] hasUpdatedWorldPositions;
@@ -418,42 +516,21 @@ namespace KinectAudioTracker
         
         private int playerCount;
 
-        public PlayerPosition()
-        {
-            this.playerCount = 7;
-            clear();
-        }
-
-        public PlayerPosition(int playerCount)
+        public PlayerPosition(int playerCount, int historyLength)
         {
             this.playerCount = playerCount;
+            this.historyLength = historyLength;
             clear();
         }
 
-        public void addPixelPosition(int playerNumber, int x, int y)
+        public void setBoundingBox(int playerNumber, Rectangle boundingBox)
         {
-            if (!checkPlayerNumber(playerNumber))
+            if(!checkPlayerNumber(playerNumber))
                 throw new ArgumentOutOfRangeException();
 
-            if (!hasPixelPosition[playerNumber])
-            {
-                playerPixelPositions[playerNumber].X = x;
-                playerPixelPositions[playerNumber].Y = y;
-                playerPixelPositions[playerNumber].Width = 0;
-                playerPixelPositions[playerNumber].Height = 0;
-            }
-
-            playerPixelPositions[playerNumber].X = Math.Min(playerPixelPositions[playerNumber].X, x);
-            playerPixelPositions[playerNumber].Y = Math.Min(playerPixelPositions[playerNumber].Y, y);
-
-            if (x > playerPixelPositions[playerNumber].Right)
-                playerPixelPositions[playerNumber].Width = x - playerPixelPositions[playerNumber].X;
-
-            if (y > playerPixelPositions[playerNumber].Bottom)
-                playerPixelPositions[playerNumber].Height = y - playerPixelPositions[playerNumber].Y;
-
+            playerPixelPositions[playerNumber].Push(boundingBox);
             hasPixelPosition[playerNumber] = true;
-            hasUpdatedWorldPositions[playerNumber] = false;
+            hasHistory[playerNumber] = true;
         }
 
         public Point getPixelPosition(int playerNumber)
@@ -461,16 +538,38 @@ namespace KinectAudioTracker
             if (!checkPlayerNumber(playerNumber) || !hasPixelPositionData(playerNumber))
                 throw new ArgumentOutOfRangeException();
 
-            return new Point(playerPixelPositions[playerNumber].Width / 2 + playerPixelPositions[playerNumber].X,
-                playerPixelPositions[playerNumber].Height / 2 + playerPixelPositions[playerNumber].Y);
+            return new Point(playerPixelPositions[playerNumber].Head().Width / 2 + playerPixelPositions[playerNumber].Head().X,
+                playerPixelPositions[playerNumber].Head().Height / 2 + playerPixelPositions[playerNumber].Head().Y);
         }
 
-        public Rectangle getPlayerBoundingBox(int playerNumber)
+        public Rectangle getBoundingBox(int playerNumber)
         {
             if (!checkPlayerNumber(playerNumber) || !hasPixelPositionData(playerNumber))
                 throw new ArgumentOutOfRangeException();
 
-            return playerPixelPositions[playerNumber];
+            return playerPixelPositions[playerNumber].Head();
+        }
+
+        public Rectangle getSmoothedBoundingBox(int playerNumber)
+        {
+            if (!checkPlayerNumber(playerNumber))
+                throw new ArgumentOutOfRangeException();
+
+            var sum = new Rectangle();
+            foreach (var r in playerPixelPositions[playerNumber])
+            {
+                sum.X += r.X;
+                sum.Y += r.Y;
+                sum.Width += r.Width;
+                sum.Height += r.Height;
+            }
+
+            sum.X /= historyLength;
+            sum.Y /= historyLength;
+            sum.Width /= historyLength;
+            sum.Height /= historyLength;
+
+            return sum;
         }
 
         public void setWorldPositions(DepthImageFrame context)
@@ -545,7 +644,12 @@ namespace KinectAudioTracker
 
         public void clear()
         {
-            this.playerPixelPositions = new Rectangle[playerCount];
+            this.hasHistory = new bool[playerCount];
+
+            this.playerPixelPositions = new RingBuffer<Rectangle>[playerCount];
+            for (int i = 0; i < playerCount; ++i)
+                this.playerPixelPositions[i] = new RingBuffer<Rectangle>(historyLength);
+
             this.playerWorldPositions = new Vector3[playerCount];
             this.hasPixelPosition = new bool[playerCount];
             this.hasUpdatedWorldPositions = new bool[playerCount];
@@ -559,7 +663,7 @@ namespace KinectAudioTracker
 
         public bool hasPixelPositionData(int playerNumber)
         {
-            return checkPlayerNumber(playerNumber) && hasPixelPosition[playerNumber];
+            return hasPixelPosition[playerNumber];
         }
 
         public bool hasAngleData(int playerNumber)
@@ -572,7 +676,7 @@ namespace KinectAudioTracker
 
         private bool checkPlayerNumber(int n)
         {
-            if (n <= 0 || n >= this.playerPixelPositions.Length)
+            if (n <= 0 || n >= this.playerCount)
             {
                 return false;
             }
@@ -601,7 +705,7 @@ namespace KinectAudioTracker
                     instance = new Storage();
                     depthImageLock = new Object();
                     colorImageLock = new Object();
-                    location = new PlayerPosition();
+                    location = new PlayerPosition(7, 3);
                     faceRectangleLock = new Object();
                     playerLocationLock = new Object();
                     soundSourceAngleLock = new Object();
@@ -727,6 +831,8 @@ namespace KinectAudioTracker
             dataStorage.playerLocations.clear();
 
             int colorPixelIndex = 0;
+            var playerPositions = new Rectangle[7];
+            var hasPixelPosition = new bool[7];
             for (int i = 0; i < depthPixels.Length; ++i)
             {
                 int player = depthPixels[i] & DepthImageFrame.PlayerIndexBitmask;
@@ -744,8 +850,32 @@ namespace KinectAudioTracker
                 {
                     var x = i % imageFrame.Width;
                     var y = i / imageFrame.Width;
-                    dataStorage.playerLocations.addPixelPosition(player, x, y);
+
+                    if (!hasPixelPosition[player])
+                    {
+                        playerPositions[player].X = x;
+                        playerPositions[player].Y = y;
+                        playerPositions[player].Width = 0;
+                        playerPositions[player].Height = 0;
+                    }
+
+                    playerPositions[player].X = Math.Min(playerPositions[player].X, x);
+                    playerPositions[player].Y = Math.Min(playerPositions[player].Y, y);
+
+                    if (x > playerPositions[player].Right)
+                        playerPositions[player].Width = x - playerPositions[player].X;
+
+                    if (y > playerPositions[player].Bottom)
+                        playerPositions[player].Height = y - playerPositions[player].Y;
+
+                    hasPixelPosition[player] = true;
                 }
+            }
+
+            for(int i = 0; i < 7; ++i)
+            {
+                if(hasPixelPosition[i])
+                    dataStorage.playerLocations.setBoundingBox(i, playerPositions[i]);
             }
 
             dataStorage.playerLocations.setWorldPositions(imageFrame);

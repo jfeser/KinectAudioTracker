@@ -31,11 +31,6 @@ namespace KinectAudioTracker
         private readonly Vector3 kinectMin = new Vector3(-2.2, -1.6, 0);
         private readonly Vector3 kinectMax = new Vector3(2.2, 1.6, 4);
 
-        private bool audioOn;
-
-        private DispatcherTimer readyTimer;
-        private int tickCount;
-
         private WriteableBitmap depthBitmap;
         public WriteableBitmap colorBitmap;
         private Storage dataStorage;
@@ -81,18 +76,8 @@ namespace KinectAudioTracker
             soundHandler.start(this.kinect, Dispatcher.CurrentDispatcher);
             soundHandler.newSoundData += new Action(soundHandler_newSoundData);
 
-            this.kinect.AudioSource.AutomaticGainControlEnabled = false;
-
-            this.kinect.Start();
             logLine("Kinect initialized");
 
-            this.playerField.t = this;
-            
-            // Wait four seconds after initialization to start audio
-            this.readyTimer = new DispatcherTimer();
-            this.readyTimer.Tick += new EventHandler(readyTimer_Tick);
-            this.readyTimer.Interval = new TimeSpan(0, 0, 1);
-            this.readyTimer.Start();
         }
 
         void soundHandler_newSoundData()
@@ -131,34 +116,6 @@ namespace KinectAudioTracker
             drawPlayers();
         }
 
-        void readyTimer_Tick(object sender, EventArgs e)
-        {
-            if (this.tickCount == 4)
-            {
-                startAudio();
-                this.readyTimer.Stop();
-                this.readyTimer = null;
-            }
-            else
-            {
-                logLine((++this.tickCount).ToString());
-            }
-        }
-
-        private void startAudio()
-        {
-            var audioSource = this.kinect.AudioSource;
-            audioSource.BeamAngleMode = BeamAngleMode.Adaptive;
-
-            var audioStream = audioSource.Start();
-            this.audioOn = true;
-        }
-
-        private void stopAudio()
-        {
-            this.kinect.AudioSource.Stop();
-            this.audioOn = false;
-        }
 
         private void drawPlayers()
         {
@@ -214,18 +171,10 @@ namespace KinectAudioTracker
 
         private void start_Click(object sender, RoutedEventArgs e)
         {
-            if (!this.audioOn)
-            {
-                startAudio();
-            }
         }
 
         private void stop_Click(object sender, RoutedEventArgs e)
         {
-            if (this.audioOn)
-            {
-                stopAudio();
-            }
         }
 
         public void logLine(string line)

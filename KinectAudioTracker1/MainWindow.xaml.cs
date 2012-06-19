@@ -857,6 +857,7 @@ namespace KinectAudioTracker
         private Storage dataStorage = Storage.Instance;
         private KinectSensor kinect;
         private Dispatcher uiDispatcher;
+        private Stream audioStream;
 
         private Action newSoundDataHandler;
         public event Action newSoundData
@@ -869,12 +870,21 @@ namespace KinectAudioTracker
         {
             running = false;
             waiter.Set();
+
+            kinect.AudioSource.Stop();
         }
 
         public void start(KinectSensor kinect, Dispatcher uiDispatcher)
         {
             this.kinect = kinect;
             this.uiDispatcher = uiDispatcher;
+
+            // Wait for four seconds before starting audio
+            Thread.Sleep(new TimeSpan(0, 0, 4));
+
+            kinect.AudioSource.BeamAngleMode = BeamAngleMode.Adaptive;
+            kinect.AudioSource.AutomaticGainControlEnabled = false;
+            audioStream = kinect.AudioSource.Start();
 
             worker = new Thread(() => run(this));
             worker.Name = "sound handler";
@@ -885,8 +895,8 @@ namespace KinectAudioTracker
         {
             var t = (KinectSoundHandler)data;
 
-            double angle = 0.0f;
-            double confidence = 0.0f;
+            double angle = 0.0;
+            double confidence = 0.0;
             double confidenceCutoff = 0.0;
 
             t.kinect.AudioSource.SoundSourceAngleChanged +=
@@ -907,6 +917,7 @@ namespace KinectAudioTracker
                 {
                     t.dataStorage.soundSourceAngle = angle;
                     t.dataStorage.soundSourceConfidence = confidence;
+                    t.uiDispatcher.Invoke(t.newSoundDataHandler);
                 }
             }
         }

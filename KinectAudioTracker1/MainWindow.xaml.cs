@@ -53,6 +53,8 @@ namespace KinectAudioTracker
 
             this.dataStorage = Storage.Instance;
 
+            this.kinect.Start();
+
             // Enable data streams
             this.kinect.ColorStream.Enable(ColorImageFormat.RgbResolution640x480Fps30);
             this.kinect.DepthStream.Enable(DepthImageFormat.Resolution640x480Fps30);

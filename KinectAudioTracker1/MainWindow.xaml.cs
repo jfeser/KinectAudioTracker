@@ -316,42 +316,45 @@ namespace KinectAudioTracker
 
     class RingBuffer<T> : IEnumerable<T>
     {
-        private T[] buffer;
-        private int bufferLength;
-        private int head = -1;
+        private LinkedList<T> buffer;
 
-        public RingBuffer(int bufferLength)
+        public RingBuffer(int capacity)
         {
-            this.bufferLength = bufferLength;
-            buffer = new T[bufferLength];
+            if (capacity <= 0)
+                throw new ArgumentOutOfRangeException("Capacity", "Must be greater than zero.");
+            Capacity = capacity;
+            buffer = new LinkedList<T>();
+        }
+
+        public int Capacity { get; private set; }
+        public int Length { get { return buffer.Count; } }
+
+        public T Head
+        {
+            get { return buffer.First.Value; }
         }
 
         public void Push(T data)
         {
-            head = (head + 1) % bufferLength;
-            buffer[head] = data;
+            buffer.AddFirst(data);
+            if (buffer.Count > Capacity)
+                buffer.RemoveLast();
         }
 
-        public T Pop()
+        public void PopBack()
         {
-            var data = buffer[head];
-            head = (head - 1) % bufferLength;
-            return data;
-        }
-
-        public T Head()
-        {
-            return buffer[head];
+            if(buffer.Count > 0)
+                buffer.RemoveLast();
         }
 
         public void Clear()
         {
-            buffer = new T[bufferLength];
+            buffer = new LinkedList<T>();
         }
 
         public System.Collections.Generic.IEnumerator<T> GetEnumerator()
         {
-            return (IEnumerator<T>)new RingBufferEnum<T>(buffer, head);
+            return buffer.GetEnumerator();
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
@@ -360,58 +363,15 @@ namespace KinectAudioTracker
         }
     }
 
-    class RingBufferEnum<T> : IEnumerator<T>
     {
-        private T[] buffer;
-        private int head, dataRead = 0, i;
-
-        public RingBufferEnum(T[] buffer, int head)
-        {
-            this.buffer = buffer;
-            this.head = this.i = head;
-        }
-
-        public T Current
-        {
-            get
-            {
-                return buffer[i];
-            }
-        }
-
-        object System.Collections.IEnumerator.Current
-        {
-            get
-            {
-                return buffer[i];
-            }
-        }
-
-        public bool MoveNext()
-        {
-            ++dataRead;
-            if (dataRead >= buffer.Length)
-                return false;
-            else
-            {
-                i = (i + 1) % buffer.Length;
-                return true;
-            }
-        }
-
-        public void Reset()
-        {
-            i = head;
-            dataRead = 0;
-        }
-
-        void System.IDisposable.Dispose()
         {
         }
-    }
 
-    static class Util
-    {
+        {
+
+
+        }
+
         public static Rectangle[] detectFaces(Image<Gray, byte> image, HaarCascade haar)
         {
             var faces = haar.Detect(image, 1.2, 3, Emgu.CV.CvEnum.HAAR_DETECTION_TYPE.DO_CANNY_PRUNING, new Size(20, 20), new Size(50, 50));

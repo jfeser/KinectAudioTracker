@@ -6,19 +6,18 @@ using System.Windows.Media.Imaging;
 
 namespace KinectAudioTracker
 {
+    using System.Collections.Generic;
     using System.Drawing;
     using System.Drawing.Imaging;
-    using System.Speech.Recognition;
-    using System.Threading;
-    using System.Windows.Threading;
-    using System.Windows.Controls;
-    using System.Collections.Generic;
     using System.IO;
-    using Microsoft.Kinect;
-
+    using System.Runtime.Remoting.Contexts;
+    using System.Threading;
+    using System.Windows.Controls;
+    using System.Windows.Interop;
+    using System.Windows.Threading;
     using Emgu.CV;
-    using Emgu.CV.Util;
     using Emgu.CV.Structure;
+    using Microsoft.Kinect;
 
     public partial class MainWindow : Window
     {

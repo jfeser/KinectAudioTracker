@@ -34,6 +34,7 @@ namespace KinectAudioTracker
         public WriteableBitmap colorBitmap;
         private Storage dataStorage;
 
+        private EigenObjectRecognizer recognizer;
         public MainWindow()
         {
             InitializeComponent();
@@ -51,6 +52,9 @@ namespace KinectAudioTracker
             }
 
             this.dataStorage = Storage.Instance;
+
+            createTrainingData();
+            logLine("Created training data");
 
             this.kinect.Start();
 
@@ -80,6 +84,25 @@ namespace KinectAudioTracker
             logLine("Kinect initialized");
 
             //this.playerField.t = this;
+        }
+
+        void createTrainingData()
+        {
+            char[] sep = { '\\', '/' };
+            var labels = new List<string>();
+            var trainingImages = new List<Image<Gray, byte>>();
+
+            foreach(var name in Directory.GetDirectories("training_data"))//////
+            {
+                foreach (var imagename in Directory.GetFiles(name))
+                {
+                    labels.Add(name.Split(sep)[1]);
+                    trainingImages.Add(new Image<Gray, byte>(imagename));
+                }
+            }
+
+            var crit = new MCvTermCriteria(16, 0.01);
+            recognizer = new EigenObjectRecognizer(trainingImages.ToArray(), labels.ToArray(), 3000, ref crit);
         }
 
         void soundHandler_newSoundData()
@@ -118,6 +141,24 @@ namespace KinectAudioTracker
             drawPlayers();
         }
 
+        private void drawFaces()
+        {
+            if (dataStorage.faceRectangles.Length == 0)
+                return;
+
+            var faceRect = dataStorage.faceRectangles[0];
+            var faceImage = Util.cropBitmap(colorBitmap, faceRect).Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC).Convert<Gray, byte>();
+            faceImage._EqualizeHist();
+
+            var output = recognizer.Recognize(faceImage);
+            if (output != null)
+                name1.Text = output.Label;
+            else
+                name1.Text = "Unknown";
+
+            var faceSource = Imaging.CreateBitmapSourceFromHBitmap(faceImage.Bitmap.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            face1.Source = faceSource;
+        }
 
         private void drawPlayers()
         {

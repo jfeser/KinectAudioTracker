@@ -760,6 +760,8 @@ namespace KinectAudioTracker
         private Storage dataStorage = Storage.Instance;
         private KinectSensor kinect;
         private Dispatcher uiDispatcher;
+        private short[] depthPixels;
+        private byte[] coloredPixels;
 
         private Action newDepthDataHandler;
         public event Action newDepthData
@@ -815,18 +817,20 @@ namespace KinectAudioTracker
             }
         }
 
-        private static byte[] processDepthFrame(DepthImageFrame imageFrame, KinectSensor kinect)
+        private static byte[] processDepthFrame(DepthImageFrame imageFrame, KinectSensor kinect, KinectDepthHandler t)
         {
             // color divisors for tinting depth pixels
             int[] IntensityShiftByPlayerR = { 1, 2, 0, 2, 0, 0, 2, 0 };
             int[] IntensityShiftByPlayerG = { 1, 2, 2, 0, 2, 0, 0, 1 };
             int[] IntensityShiftByPlayerB = { 1, 0, 2, 2, 0, 2, 0, 2 };
 
-            var depthPixels = new short[kinect.DepthStream.FramePixelDataLength];
-            var coloredPixels = new byte[kinect.DepthStream.FramePixelDataLength * sizeof(int)];
+            if(t.depthPixels == null)
+                t.depthPixels = new short[kinect.DepthStream.FramePixelDataLength];
+            if(t.coloredPixels == null)
+                t.coloredPixels = new byte[kinect.DepthStream.FramePixelDataLength * sizeof(int)];
             var dataStorage = Storage.Instance;
 
-            imageFrame.CopyPixelDataTo(depthPixels);
+            imageFrame.CopyPixelDataTo(t.depthPixels);
 
             dataStorage.playerLocations.clear();
 
@@ -891,7 +895,7 @@ namespace KinectAudioTracker
                 }
             }
 
-            return coloredPixels;
+            return t.coloredPixels;
         }
     }
 
@@ -959,9 +963,11 @@ namespace KinectAudioTracker
 
                 if (!t.running) break;
 
-                if (t.dataStorage.colorPixels == null)
                 {
-                    t.dataStorage.colorPixels = new byte[t.kinect.ColorStream.FramePixelDataLength];
+                    if (t.dataStorage.colorPixels == null)
+                    {
+                        t.dataStorage.colorPixels = new byte[t.kinect.ColorStream.FramePixelDataLength];
+                    }
                 }
 
                 if (imageFrame != null)

@@ -12,19 +12,19 @@
         </Grid.RowDefinitions>
         <ListBox Height="455" HorizontalAlignment="Left" Margin="12,12,0,0" Name="listBox1" VerticalAlignment="Top" Width="226" Grid.RowSpan="3" />
         <TabControl Height="489" HorizontalAlignment="Left" Margin="244,12,0,0" Name="tabControl1" VerticalAlignment="Top" Width="641" Grid.RowSpan="3">
-            <TabItem Header="Depth view" Name="depthView">
+            <TabItem Header="Talking player" Name="tabItem1">
                 <Grid>
-                    <Image Height="446" HorizontalAlignment="Left" Margin="6,6,0,0" Name="depthImage" Stretch="Fill" VerticalAlignment="Top" Width="619" />
+                    <Image Height="100" HorizontalAlignment="Left" Margin="260,100,0,0" Name="talkingFace" Stretch="Fill" VerticalAlignment="Top" Width="100" />
+                    <TextBlock Height="64" HorizontalAlignment="Left" Margin="179,0,0,116" Name="sourceAngleText" Text="" VerticalAlignment="Bottom" Width="279" FontSize="36" />
+                    <TextBlock Height="23" HorizontalAlignment="Left" Margin="58,298,0,0" Name="textBlock2" Text="Sound Source Angle" VerticalAlignment="Top" Width="115" />
+                    <TextBlock FontSize="36" Height="64" HorizontalAlignment="Left" Margin="179,0,0,29" Name="playerAngleText" Text="" VerticalAlignment="Bottom" Width="279" />
+                    <TextBlock Height="23" HorizontalAlignment="Left" Margin="58,385,0,0" Name="textBlock4" Text="Player Angle" VerticalAlignment="Top" Width="115" />
                 </Grid>
             </TabItem>
-            <TabItem Header="Audio source" Name="playerLoc">
+            <TabItem Header="Statistics" Name="tabItem2">
                 <Grid>
-                    <local:AngleDisplay x:Name="audioAngleDisplay" Margin="157,6,156,325" />
-                </Grid>
-            </TabItem>
-            <TabItem Header="Color view" Name="colorView">
-                <Grid>
-                    <Image Height="446" HorizontalAlignment="Left" Margin="6,5,0,0" Name="colorImage" Stretch="Fill" VerticalAlignment="Top" Width="619" />
+                    <ListBox Height="422" HorizontalAlignment="Left" Margin="6,29,0,0" Name="peopleDetected" VerticalAlignment="Top" Width="154" />
+                    <TextBlock Height="23" HorizontalAlignment="Left" Margin="6,6,0,0" Name="textBlock1" Text="People detected" VerticalAlignment="Top" Width="154" TextAlignment="Center" />
                 </Grid>
             </TabItem>
         </TabControl>

@@ -30,11 +30,13 @@ namespace KinectAudioTracker
         private readonly Vector3 kinectMin = new Vector3(-2.2, -1.6, 0);
         private readonly Vector3 kinectMax = new Vector3(2.2, 1.6, 4);
 
-        private WriteableBitmap depthBitmap;
         public WriteableBitmap colorBitmap;
         private Storage dataStorage;
 
+        private List<Image<Gray, byte>>[] playerFaces;
+
         private EigenObjectRecognizer recognizer;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -63,15 +65,11 @@ namespace KinectAudioTracker
             this.kinect.DepthStream.Enable(DepthImageFormat.Resolution640x480Fps30);
             this.kinect.SkeletonStream.Enable();
 
-            this.depthBitmap = new WriteableBitmap(this.kinect.DepthStream.FrameWidth, this.kinect.DepthStream.FrameHeight, 96.0, 96.0, PixelFormats.Bgr32, null);
-            depthImage.Source = this.depthBitmap;
+            this.colorBitmap = new WriteableBitmap(this.kinect.ColorStream.FrameWidth, this.kinect.ColorStream.FrameHeight, 96.0, 96.0, PixelFormats.Bgr32, null);
 
             depthHandler = new KinectDepthHandler();
             depthHandler.start(this.kinect, Dispatcher.CurrentDispatcher);
             depthHandler.newDepthData += new Action(depthHandler_newDepthData);
-
-            this.colorBitmap = new WriteableBitmap(this.kinect.ColorStream.FrameWidth, this.kinect.ColorStream.FrameHeight, 96.0, 96.0, PixelFormats.Bgr32, null);
-            colorImage.Source = this.colorBitmap;
 
             colorHandler = new KinectColorHandler();
             colorHandler.start(this.kinect, Dispatcher.CurrentDispatcher);
@@ -81,9 +79,11 @@ namespace KinectAudioTracker
             soundHandler.start(this.kinect, Dispatcher.CurrentDispatcher);
             soundHandler.newSoundData += new Action(soundHandler_newSoundData);
 
-            logLine("Kinect initialized");
+            playerFaces = new List<Image<Gray, byte>>[7];
+            for (int i = 0; i < 7; ++i)
+                playerFaces[i] = new List<Image<Gray, byte>>();
 
-            //this.playerField.t = this;
+            logLine("Kinect initialized");
         }
 
         void createTrainingData()
@@ -92,7 +92,7 @@ namespace KinectAudioTracker
             var labels = new List<string>();
             var trainingImages = new List<Image<Gray, byte>>();
 
-            foreach(var name in Directory.GetDirectories("training_data"))//////
+            foreach(var name in Directory.GetDirectories("training_data"))
             {
                 foreach (var imagename in Directory.GetFiles(name))
                 {
@@ -107,86 +107,96 @@ namespace KinectAudioTracker
 
         void soundHandler_newSoundData()
         {
-            audioAngleDisplay.rotTx.Angle = -dataStorage.soundSourceAngle;
         }
 
         void colorHandler_newColorData()
         {
-            // Draw the color bitmap to the screen
-            colorBitmap.WritePixels(new Int32Rect(0, 0, colorBitmap.PixelWidth, colorBitmap.PixelHeight),
-                this.dataStorage.colorPixels, colorBitmap.PixelWidth * sizeof(int), 0);
+            double sourceAngle;
 
-            foreach (var face in dataStorage.faceRectangles)
+            lock(Storage.beamAngleLock) { sourceAngle = dataStorage.SoundSourceAngle; }
+            lock (Storage.colorImageLock) { colorBitmap.WritePixels(new Int32Rect(0, 0, colorBitmap.PixelWidth, colorBitmap.PixelHeight), this.dataStorage.colorPixels, colorBitmap.PixelWidth * sizeof(int), 0); }
+
+            Rectangle boundingBox;
+
+            //lock (Storage.playerLocationLock)
+            //{
+            //    lock (Storage.soundSourceAngleLock)
+            //    { 
+            //        if(dataStorage.SoundSourceConfidence < 0.5)
+            //            return;
+                    
+            //        talkingPlayer = Util.getClosestPlayerByAngle(dataStorage.SoundSourceAngle, 10, dataStorage.playerLocations);
+            //    }
+
+            //    if (talkingPlayer != -1)
+            //    { 
+            //        boundingBox = dataStorage.playerLocations[talkingPlayer].SmoothedBoundingBox; 
+            //    }
+            //    else 
+            //    {
+            //        if (Math.Abs(dataStorage.BeamAngle) >= 40)
+            //            talkingStatus.Text = "Offscreen";
+            //        talkingStatus.Text = "";
+            //        talkingFace.Source = null;
+            //        return; 
+            //    }
+            //}
+
+            var foundFace = false;
+            var talkingPlayer = -1;
+            lock (Storage.faceRectangleLock)
             {
-                for(int i = 0; i < 7; ++i)
+                var faceAngles = new double[dataStorage.faceRectangles.Length];
+                var i = 0;
+
+                DepthImageFrame df;
+                lock (Storage.depthFrameLock) { df = dataStorage.DepthFrame; }
+
+                foreach (var face in dataStorage.faceRectangles)
                 {
-                    if (dataStorage.playerLocations.hasPixelPositionData(i))
+                    SkeletonPoint wp;
+                    try { wp = df.MapToSkeletonPoint(face.Width / 2 + face.Left, face.Height / 2 + face.Top); }
+                    catch { continue; }
+                    //logLine("Calculated angle");
+                    faceAngles[i] = -Util.radToDeg(-Math.Atan(wp.X / wp.Z));
+                }
+
+                double difference = 0;
+                talkingPlayer = Util.getClosestPlayerByAngle(sourceAngle, 10, faceAngles, ref difference);
+                if (talkingPlayer != -1)
+                {
+                    var tf = dataStorage.faceRectangles[talkingPlayer];
+                    talkingFace.Source = new CroppedBitmap(colorBitmap, new Int32Rect(tf.X, tf.Y, tf.Width, tf.Height));
+                    sourceAngleText.Text = "Talking";
+                    foundFace = true;
+                }
+                else
+                {
+                    if (dataStorage.faceRectangles.Length > 0)
                     {
-                        var overlap = Rectangle.Intersect(face, dataStorage.playerLocations.getPlayerBoundingBox(i));
-                        if (overlap != new Rectangle())
-                        {
-                            Util.drawBoundingBox(face, colorBitmap, System.Drawing.Color.Black, 5);
-                        }
+                        var tf = dataStorage.faceRectangles[0];
+                        talkingFace.Source = null;//new CroppedBitmap(colorBitmap, new Int32Rect(tf.X, tf.Y, tf.Width, tf.Height));
+                        sourceAngleText.Text = sourceAngle.ToString();
+                        playerAngleText.Text = faceAngles[0].ToString();
                     }
+                }
+            }
+
+            if (!foundFace)
+            {
+                lock (Storage.playerLocationLock)
+                {
+                    double difference = 0;
+                    var talkingPlayer2 = Util.getClosestPlayerByAngle(sourceAngle, 10, dataStorage.playerLocations, ref difference);
+                    var boundingBox2 = dataStorage.playerLocations[talkingPlayer2].BoundingBox;
+                    talkingFace.Source = new CroppedBitmap(colorBitmap, new Int32Rect(boundingBox2.X, boundingBox2.Y, boundingBox2.Width, boundingBox2.Height));
+                    sourceAngleText.Text = "Talking";
                 }
             }
         }
 
         void depthHandler_newDepthData()
         {
-            // Draw the depth bitmap to the screen
-            depthBitmap.WritePixels(new Int32Rect(0, 0, depthBitmap.PixelWidth, depthBitmap.PixelHeight), 
-                this.dataStorage.depthPixels, depthBitmap.PixelWidth * sizeof(int), 0);
-
-            drawPlayers();
-        }
-
-        private void drawFaces()
-        {
-            if (dataStorage.faceRectangles.Length == 0)
-                return;
-
-            var faceRect = dataStorage.faceRectangles[0];
-            var faceImage = Util.cropBitmap(colorBitmap, faceRect).Resize(100, 100, Emgu.CV.CvEnum.INTER.CV_INTER_CUBIC).Convert<Gray, byte>();
-            faceImage._EqualizeHist();
-
-            var output = recognizer.Recognize(faceImage);
-            if (output != null)
-                name1.Text = output.Label;
-            else
-                name1.Text = "Unknown";
-
-            var faceSource = Imaging.CreateBitmapSourceFromHBitmap(faceImage.Bitmap.GetHbitmap(), IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            face1.Source = faceSource;
-        }
-
-        private void drawPlayers()
-        {
-            //var talkingPlayer = locations.getClosestPlayerByAngle(this.soundSourceAngle, 50.0);
-
-            playerField.Children.Clear();
-            for (int i = 1; i < 7; ++i)
-            {
-                if (dataStorage.playerLocations.hasPixelPositionData(i))
-                {
-                    //System.Drawing.Point p = dataStorage.playerLocations.getPixelPosition(i);
-                    Rectangle rect = dataStorage.playerLocations.getPlayerBoundingBox(i);
-                    Util.drawRect(rect, this.depthBitmap, System.Drawing.Color.Orange);
-                }
-                if (dataStorage.playerLocations.hasWorldPositionData(i))
-                {
-                    var v = dataStorage.playerLocations.getWorldPosition(i);
-                    var drawV = Vector3.ScaleVector(kinectMin, kinectMax, new Vector3(playerField.Width, 0, playerField.Height), v);
-                    var rect = new System.Windows.Shapes.Rectangle
-                    {
-                        Stroke = System.Windows.Media.Brushes.Black,
-                        StrokeThickness = 50
-                    };
-                    Canvas.SetLeft(rect, drawV.X);
-                    Canvas.SetTop(rect, drawV.Z);
-                    playerField.Children.Add(rect);
-                }
-            }
         }
 
         private void uninitializeKinect()
@@ -214,12 +224,14 @@ namespace KinectAudioTracker
 
         private void start_Click(object sender, RoutedEventArgs e)
         {
-            colorHandler.enableFaceTracking();
+            if(colorHandler != null)
+                colorHandler.enableFaceTracking();
         }
 
         private void stop_Click(object sender, RoutedEventArgs e)
         {
-            colorHandler.disableFaceTracking();
+            if(colorHandler != null)
+                colorHandler.disableFaceTracking();
         }
 
         public void logLine(string line)
@@ -269,6 +281,11 @@ namespace KinectAudioTracker
         public static Vector3 operator /(Vector3 v1, Vector3 v2)
         {
             return new Vector3(v1.X/v2.X, v1.Y/v2.Y, v1.Z/v2.Z);
+        }
+
+        public static Vector3 operator /(Vector3 v, int i)
+        {
+            return new Vector3(v.X / i, v.Y / i, v.Z / i);
         }
 
         public static Vector3 operator *(Vector3 v1, Vector3 v2)
@@ -363,13 +380,23 @@ namespace KinectAudioTracker
         }
     }
 
+    static class Util
     {
+        public static Rectangle lerp(Rectangle a, Rectangle b)
         {
+            return new Rectangle((a.X + b.X) / 2, (a.Y + b.Y) / 2, (a.Width + b.Width) / 2, (a.Height + b.Height) / 2);
         }
 
+        public static void saveBitmapToFile(BitmapSource src, string filename)
         {
+            BitmapEncoder pngEncoder = new PngBitmapEncoder();
+            pngEncoder.Frames.Add(BitmapFrame.Create(src));
 
+            System.IO.MemoryStream ms = new MemoryStream();
 
+            pngEncoder.Save(ms);
+            ms.Close();
+            System.IO.File.WriteAllBytes(filename, ms.ToArray());
         }
 
         public static Rectangle[] detectFaces(Image<Gray, byte> image, HaarCascade haar)
@@ -402,12 +429,44 @@ namespace KinectAudioTracker
             return new Image<Bgr, byte>(arrangedPixels);
         }
 
+        public static Image<Bgr, byte> cropBitmap(WriteableBitmap b, Rectangle r)
+        {
+            if (r.X < 0 || r.Right >= b.PixelWidth || r.Y < 0 || r.Bottom >= b.PixelHeight)
+                throw new ArgumentOutOfRangeException();
+
+            b.Lock();
+
+            byte[, ,] pixelData = new byte[r.Height, r.Width, 3];
+
+            unsafe
+            {
+                for (int j = r.Y; j < r.Bottom; ++j)
+                {
+                    for (int i = r.X; i < r.Right; ++i)
+                    {
+                        int backBuffer = (int)b.BackBuffer;
+
+                        backBuffer += j * b.BackBufferStride;
+                        backBuffer += i * 4;
+
+                        int colorData = *((int*)backBuffer);
+                        var bytes = BitConverter.GetBytes(colorData);
+                        pixelData[j - r.Y, i - r.X, 0] = bytes[0];
+                        pixelData[j - r.Y, i - r.X, 1] = bytes[1];
+                        pixelData[j - r.Y, i - r.X, 2] = bytes[2];
+                    }
+                }
+            }
+
+            return new Image<Bgr, byte>(pixelData);
+        }
+
         public static void drawBoundingBox(Rectangle r, WriteableBitmap b, Color c, int pixelWidth)
         {
             Util.drawRect(new Rectangle(r.X, r.Y, r.Width, pixelWidth), b, c);
             Util.drawRect(new Rectangle(r.X, r.Y, pixelWidth, r.Height), b, c);
-            Util.drawRect(new Rectangle(r.X, r.Bottom-pixelWidth, r.Width, pixelWidth), b, c);
-            Util.drawRect(new Rectangle(r.Right-pixelWidth, r.Y, pixelWidth, r.Height), b, c);
+            Util.drawRect(new Rectangle(r.X, r.Bottom - pixelWidth, r.Width, pixelWidth), b, c);
+            Util.drawRect(new Rectangle(r.Right - pixelWidth, r.Y, pixelWidth, r.Height), b, c);
         }
 
         public static void drawRect(Rectangle r, WriteableBitmap b, Color c)
@@ -500,199 +559,190 @@ namespace KinectAudioTracker
 
             return bi;
         }
-    }
 
-    class PlayerPosition
-    {
-        private RingBuffer<Rectangle>[] playerPixelPositions;
-        private int historyLength;
-        private bool[] hasPixelPosition;
-        private bool[] hasHistory;
-
-        private Vector3[] playerWorldPositions;
-        private bool[] hasUpdatedWorldPositions;
-
-        private double[] playerAngles;
-        
-        private int playerCount;
-
-        public PlayerPosition(int playerCount, int historyLength)
+        public static Bitmap BitmapImageToBitmap(BitmapImage bitmapImage)
         {
-            this.playerCount = playerCount;
-            this.historyLength = historyLength;
-            clear();
-        }
-
-        public void setBoundingBox(int playerNumber, Rectangle boundingBox)
-        {
-            if(!checkPlayerNumber(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            playerPixelPositions[playerNumber].Push(boundingBox);
-            hasPixelPosition[playerNumber] = true;
-            hasHistory[playerNumber] = true;
-        }
-
-        public Point getPixelPosition(int playerNumber)
-        {
-            if (!checkPlayerNumber(playerNumber) || !hasPixelPositionData(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            return new Point(playerPixelPositions[playerNumber].Head().Width / 2 + playerPixelPositions[playerNumber].Head().X,
-                playerPixelPositions[playerNumber].Head().Height / 2 + playerPixelPositions[playerNumber].Head().Y);
-        }
-
-        public Rectangle getBoundingBox(int playerNumber)
-        {
-            if (!checkPlayerNumber(playerNumber) || !hasPixelPositionData(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            return playerPixelPositions[playerNumber].Head();
-        }
-
-        public Rectangle getSmoothedBoundingBox(int playerNumber)
-        {
-            if (!checkPlayerNumber(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            var sum = new Rectangle();
-            foreach (var r in playerPixelPositions[playerNumber])
+            using (MemoryStream outStream = new MemoryStream())
             {
-                sum.X += r.X;
-                sum.Y += r.Y;
-                sum.Width += r.Width;
-                sum.Height += r.Height;
-            }
+                BitmapEncoder enc = new BmpBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(bitmapImage));
+                enc.Save(outStream);
+                System.Drawing.Bitmap bitmap = new System.Drawing.Bitmap(outStream);
 
-            sum.X /= historyLength;
-            sum.Y /= historyLength;
-            sum.Width /= historyLength;
-            sum.Height /= historyLength;
-
-            return sum;
-        }
-
-        public void setWorldPositions(DepthImageFrame context)
-        {
-            for (int i = 0; i < this.playerCount; i++)
-            {
-                if (hasPixelPositionData(i))
-                {
-                    var p = getPixelPosition(i);
-
-                    if (playerWorldPositions[i] == null)
-                        playerWorldPositions[i] = new Vector3();
-
-                    playerWorldPositions[i].X = context.MapToSkeletonPoint(p.X, p.Y).X;
-                    playerWorldPositions[i].Y = context.MapToSkeletonPoint(p.X, p.Y).Y;
-                    playerWorldPositions[i].Z = context.MapToSkeletonPoint(p.X, p.Y).Z;
-
-                    hasUpdatedWorldPositions[i] = true;
-                }
+                // return bitmap; <-- leads to problems, stream is closed/closing ...
+                return new Bitmap(bitmap);
             }
         }
 
-        public Vector3 getWorldPosition(int playerNumber)
-        {
-            if (!checkPlayerNumber(playerNumber) && hasWorldPositionData(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            return playerWorldPositions[playerNumber];
-        }
-
-        public bool hasWorldPositionData(int playerNumber)
-        {
-            if (!checkPlayerNumber(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            return hasUpdatedWorldPositions[playerNumber];
-        }
-
-        public void setAngle(int playerNumber, double angle)
-        {
-            if (!checkPlayerNumber(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            playerAngles[playerNumber] = angle;
-        }
-
-        public double getAngle(int playerNumber, double angle)
-        {
-            if (!checkPlayerNumber(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            return playerAngles[playerNumber];
-        }
-
-        public int getClosestPlayerByAngle(double angle, double cutoff)
+        public static int getClosestPlayerByAngle(double angle, double cutoff, Player[] players, ref double difference)
         {
             double min_difference = double.PositiveInfinity;
-            int min_player = -1;
+            cutoff = Math.Abs(cutoff);
+            int minPlayer = -1;
 
-            for(int i = 1; i < this.playerAngles.Length; ++i)
+            for(int i = 0; i < 7; ++i)
             {
-                var difference = Math.Abs(this.playerAngles[i] - angle);
-                if(difference < cutoff && difference < min_difference)
+                difference = Math.Abs(players[i].Angle - angle);
+                if (difference < min_difference && difference < cutoff)
                 {
                     min_difference = difference;
-                    min_player = i;
+                    minPlayer = i;
                 }
             }
 
-            return min_player;
+            difference = min_difference;
+            return minPlayer;
         }
 
-        public void clear()
+        public static int getClosestPlayerByAngle(double angle, double cutoff, double[] players, ref double difference)
         {
-            this.hasHistory = new bool[playerCount];
+            double min_difference = double.PositiveInfinity;
+            cutoff = Math.Abs(cutoff);
+            int minPlayer = -1;
 
-            this.playerPixelPositions = new RingBuffer<Rectangle>[playerCount];
-            for (int i = 0; i < playerCount; ++i)
-                this.playerPixelPositions[i] = new RingBuffer<Rectangle>(historyLength);
-
-            this.playerWorldPositions = new Vector3[playerCount];
-            this.hasPixelPosition = new bool[playerCount];
-            this.hasUpdatedWorldPositions = new bool[playerCount];
-
-            this.playerAngles = new double[playerCount];
-            for (int i = 0; i < playerCount; ++i)
+            for (int i = 0; i < players.Length; ++i)
             {
-                this.playerAngles[i] = -1;
+                difference = Math.Abs(players[i] - angle);
+                if (difference < min_difference && difference < cutoff)
+                {
+                    min_difference = difference;
+                    minPlayer = i;
+                }
+            }
+
+            difference = min_difference;
+            return minPlayer;
+        }
+    }
+
+    class Player
+    {
+        private RingBuffer<Rectangle> pixelPosition;
+        private RingBuffer<Vector3> worldPosition;
+        private double angle;
+        private int historyLength;
+
+        public Player(int historyLength)
+        {
+            if (historyLength <= 0)
+                throw new ArgumentOutOfRangeException("historyLength", "History length must be greater than zero.");
+
+            this.historyLength = historyLength;
+
+            pixelPosition = new RingBuffer<Rectangle>(historyLength);
+            worldPosition = new RingBuffer<Vector3>(historyLength);
+        }
+
+        public void Clear()
+        {
+            pixelPosition.PopBack();
+            worldPosition.PopBack();
+        }
+
+        public bool hasPixelPosition
+        {
+            get { return pixelPosition.Length > 0; }
+        }
+
+        public bool hasWorldPosition
+        {
+            get { return worldPosition.Length > 0; }
+        }
+
+        public Rectangle BoundingBox
+        {
+            get { return pixelPosition.Head; }
+            set { pixelPosition.Push(value); }
+        }
+
+        public Rectangle SmoothedBoundingBox
+        {
+            get
+            {
+                var length = pixelPosition.Length; 
+                var sum = new Rectangle();
+
+                if (length == 0)
+                    return sum;
+
+                foreach (var r in pixelPosition)
+                {
+                    sum.X += r.X;
+                    sum.Y += r.Y;
+                    sum.Width += r.Width;
+                    sum.Height += r.Height;
+                }
+
+                sum.X /= length;
+                sum.Y /= length;
+                sum.Width /= length;
+                sum.Height /= length;
+
+                return sum;
             }
         }
 
-        public bool hasPixelPositionData(int playerNumber)
+        public Point PixelPosition
         {
-            return hasPixelPosition[playerNumber];
-        }
-
-        public bool hasAngleData(int playerNumber)
-        {
-            if (!checkPlayerNumber(playerNumber))
-                throw new ArgumentOutOfRangeException();
-
-            return playerAngles[playerNumber] != -1;
-        }
-
-        private bool checkPlayerNumber(int n)
-        {
-            if (n <= 0 || n >= this.playerCount)
+            get
             {
-                return false;
+                return new Point(pixelPosition.Head.Width / 2 + pixelPosition.Head.X, pixelPosition.Head.Height / 2 + pixelPosition.Head.Y);
             }
-            return true;
+        }
+
+        public Vector3 WorldPosition
+        {
+            get { return worldPosition.Head; }
+        }
+
+        public Vector3 SmoothedWorldPosition
+        {
+            get
+            {
+                var sum = new Vector3();
+                foreach (var v in worldPosition)
+                    sum += v;
+
+                return sum / worldPosition.Length;
+            }
+        }
+
+        public void setWorldPosition(DepthImageFrame context)
+        {
+            if (pixelPosition.Length > 0)
+            {
+                var p = PixelPosition;
+                SkeletonPoint sp;
+
+                try { sp = context.MapToSkeletonPoint(p.X, p.Y); }
+                catch (NullReferenceException e) { return; }
+
+                var wp = new Vector3(sp.X, sp.Y, sp.Z);
+
+                worldPosition.Push(wp);
+            }
+
+            context.Dispose();
+        }
+
+        public double Angle
+        {
+            get { return angle; }
+            set { angle = value; }
         }
     }
 
     class Storage
     {
         private static Storage instance;
-        private static object depthImageLock, colorImageLock, playerLocationLock,
-            soundSourceAngleLock, soundSourceConfidenceLock, faceRectangleLock;
+        public static object depthImageLock, colorImageLock, playerLocationLock,
+            soundSourceAngleLock, soundSourceConfidenceLock, faceRectangleLock, beamAngleLock,
+            depthFrameLock;
         private static byte[] depth, color;
-        private static PlayerPosition location;
-        private static double angle, confidence;
+        private static Player[] location;
+        private static double sourceAngle, sourceConfidence, beamAngle;
         private Rectangle[] faces;
+        private DepthImageFrame depthFrame;
 
         private Storage() { }
 
@@ -703,9 +753,15 @@ namespace KinectAudioTracker
                 if (instance == null)
                 {
                     instance = new Storage();
+
+                    location = new Player[7];
+                    for (int i = 0; i < 7; ++i)
+                        location[i] = new Player(20);
+
+                    beamAngleLock = new Object();
                     depthImageLock = new Object();
                     colorImageLock = new Object();
-                    location = new PlayerPosition(7, 3);
+                    depthFrameLock = new Object();
                     faceRectangleLock = new Object();
                     playerLocationLock = new Object();
                     soundSourceAngleLock = new Object();
@@ -715,40 +771,52 @@ namespace KinectAudioTracker
             }
         }
 
-        public PlayerPosition playerLocations
+        public Player[] playerLocations
         {
-            get { lock (playerLocationLock) { return location; } }
-            set { lock (playerLocationLock) { location = value; } }
+            get { return location; }
+            set { location = value; }
         }
 
         public byte[] depthPixels
         {
-            get { lock (depthImageLock) { return depth; } }
-            set { lock (depthImageLock) { depth = value; } }
+            get { return depth; }
+            set { depth = value; }
         }
 
         public byte[] colorPixels
         {
-            get { lock (colorImageLock) { return color; } }
-            set { lock (colorImageLock) { color = value; } }
+            get { return color; }
+            set { color = value; }
         }
 
-        public double soundSourceAngle
+        public double SoundSourceAngle
         {
-            get { lock (soundSourceAngleLock) { return angle; } }
-            set { lock (soundSourceAngleLock) { angle = value; } }
+            get { return sourceAngle; }
+            set { sourceAngle = value; }
         }
 
-        public double soundSourceConfidence
+        public double SoundSourceConfidence
         {
-            get { lock (soundSourceConfidenceLock) { return confidence; } }
-            set { lock (soundSourceConfidenceLock) { confidence = value; } }
+            get { return sourceConfidence; }
+            set { sourceConfidence = value; }
+        }
+
+        public double BeamAngle
+        {
+            get { return beamAngle; }
+            set { beamAngle = value; }
         }
 
         public Rectangle[] faceRectangles
         {
-            get { lock (faceRectangleLock) { return faces; } }
-            set { lock (faceRectangleLock) { faces = value; } }
+            get { return faces; }
+            set { faces = value; }
+        }
+
+        public DepthImageFrame DepthFrame
+        {
+            get { return depthFrame; }
+            set { depthFrame = value; }
         }
     }
 
@@ -802,14 +870,18 @@ namespace KinectAudioTracker
 
             while (true)
             {
-                System.Console.Write("Waiting");
-                t.waiter.WaitOne();
+                var success = t.waiter.WaitOne(new TimeSpan(0, 2, 0));
+                if (!success)
+                    throw new TimeoutException();
 
                 if (!t.running) break;
 
                 if (imageFrame != null)
                 {
-                    t.dataStorage.depthPixels = processDepthFrame(imageFrame, t.kinect);
+                    lock (Storage.depthImageLock)
+                    {
+                        t.dataStorage.depthPixels = processDepthFrame(imageFrame, t.kinect, t);
+                    }
                     t.uiDispatcher.BeginInvoke(t.newDepthDataHandler);
                     imageFrame.Dispose();
                     imageFrame = null;
@@ -819,6 +891,14 @@ namespace KinectAudioTracker
 
         private static byte[] processDepthFrame(DepthImageFrame imageFrame, KinectSensor kinect, KinectDepthHandler t)
         {
+            var dataStorage = Storage.Instance;
+            lock (Storage.depthFrameLock) 
+            {
+                if (dataStorage.DepthFrame != null)
+                    dataStorage.DepthFrame.Dispose();
+                dataStorage.DepthFrame = imageFrame;
+            }
+
             // color divisors for tinting depth pixels
             int[] IntensityShiftByPlayerR = { 1, 2, 0, 2, 0, 0, 2, 0 };
             int[] IntensityShiftByPlayerG = { 1, 2, 2, 0, 2, 0, 0, 1 };
@@ -828,25 +908,22 @@ namespace KinectAudioTracker
                 t.depthPixels = new short[kinect.DepthStream.FramePixelDataLength];
             if(t.coloredPixels == null)
                 t.coloredPixels = new byte[kinect.DepthStream.FramePixelDataLength * sizeof(int)];
-            var dataStorage = Storage.Instance;
 
             imageFrame.CopyPixelDataTo(t.depthPixels);
 
-            dataStorage.playerLocations.clear();
-
             int colorPixelIndex = 0;
-            var playerPositions = new Rectangle[7];
+            var boundingBoxes = new Rectangle[7];
             var hasPixelPosition = new bool[7];
-            for (int i = 0; i < depthPixels.Length; ++i)
+            for (int i = 0; i < t.depthPixels.Length; ++i)
             {
-                int player = depthPixels[i] & DepthImageFrame.PlayerIndexBitmask;
-                int depth = depthPixels[i] >> DepthImageFrame.PlayerIndexBitmaskWidth;
+                int player = t.depthPixels[i] & DepthImageFrame.PlayerIndexBitmask;
+                int depth = t.depthPixels[i] >> DepthImageFrame.PlayerIndexBitmaskWidth;
 
                 byte intensity = (byte)(~(depth >> 4));
 
-                coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerR[player]);
-                coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerG[player]);
-                coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerB[player]);
+                t.coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerR[player]);
+                t.coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerG[player]);
+                t.coloredPixels[colorPixelIndex++] = (byte)(intensity >> IntensityShiftByPlayerB[player]);
                 ++colorPixelIndex;
 
                 // Update the player location average
@@ -856,42 +933,41 @@ namespace KinectAudioTracker
                     var y = i / imageFrame.Width;
 
                     if (!hasPixelPosition[player])
-                    {
-                        playerPositions[player].X = x;
-                        playerPositions[player].Y = y;
-                        playerPositions[player].Width = 0;
-                        playerPositions[player].Height = 0;
-                    }
+                        boundingBoxes[player] = new Rectangle(x, y, 0, 0);
 
-                    playerPositions[player].X = Math.Min(playerPositions[player].X, x);
-                    playerPositions[player].Y = Math.Min(playerPositions[player].Y, y);
+                    boundingBoxes[player].X = Math.Min(x, boundingBoxes[player].X);
+                    boundingBoxes[player].Y = Math.Min(y, boundingBoxes[player].Y);
 
-                    if (x > playerPositions[player].Right)
-                        playerPositions[player].Width = x - playerPositions[player].X;
+                    if (x > boundingBoxes[player].Right)
+                        boundingBoxes[player].Width = x - boundingBoxes[player].Left;
 
-                    if (y > playerPositions[player].Bottom)
-                        playerPositions[player].Height = y - playerPositions[player].Y;
+                    if (y > boundingBoxes[player].Bottom)
+                        boundingBoxes[player].Height = y - boundingBoxes[player].Top;
+
 
                     hasPixelPosition[player] = true;
                 }
             }
 
-            for(int i = 0; i < 7; ++i)
+            lock (Storage.playerLocationLock)
             {
-                if(hasPixelPosition[i])
-                    dataStorage.playerLocations.setBoundingBox(i, playerPositions[i]);
-            }
-
-            dataStorage.playerLocations.setWorldPositions(imageFrame);
-            // Update the angle between the player and the kinect
-            for (int i = 1; i < 7; ++i)
-            {
-                if(dataStorage.playerLocations.hasWorldPositionData(i))
+                for (int i = 1; i < 7; ++i)
                 {
-                    var v = dataStorage.playerLocations.getWorldPosition(i);
-                    var x = v.X;
-                    var z = v.Z;
-                    dataStorage.playerLocations.setAngle(i, Util.radToDeg(-Math.Atan(x / z)));
+                    if (hasPixelPosition[i])
+                    {
+                        dataStorage.playerLocations[i].BoundingBox = boundingBoxes[i];
+                        dataStorage.playerLocations[i].setWorldPosition(imageFrame);
+
+                        if (dataStorage.playerLocations[i].hasWorldPosition)
+                        {
+                            var v = dataStorage.playerLocations[i].WorldPosition;
+                            var x = v.X;
+                            var z = v.Z;
+                            dataStorage.playerLocations[i].Angle = Util.radToDeg(-Math.Atan(x / z));
+                        }
+                    }
+                    else
+                        dataStorage.playerLocations[i].Clear();
                 }
             }
 
@@ -959,10 +1035,13 @@ namespace KinectAudioTracker
 
             while (true)
             {
-                t.waiter.WaitOne();
+                var success = t.waiter.WaitOne(new TimeSpan(0, 2, 0));
+                if (!success)
+                    throw new TimeoutException();
 
                 if (!t.running) break;
 
+                lock (Storage.colorImageLock)
                 {
                     if (t.dataStorage.colorPixels == null)
                     {
@@ -972,11 +1051,13 @@ namespace KinectAudioTracker
 
                 if (imageFrame != null)
                 {
-                    imageFrame.CopyPixelDataTo(t.dataStorage.colorPixels);
+                    lock (Storage.colorImageLock) { imageFrame.CopyPixelDataTo(t.dataStorage.colorPixels); }
 
-                    if(t.isFaceTracking)
-                        t.dataStorage.faceRectangles = Util.detectFaces(Util.colorFrameToImage(imageFrame).Convert<Gray, byte>(), haar);
-
+                    lock (Storage.faceRectangleLock)
+                    {
+                        if (t.isFaceTracking)
+                            t.dataStorage.faceRectangles = Util.detectFaces(Util.colorFrameToImage(imageFrame).Convert<Gray, byte>(), haar);
+                    }
                     t.uiDispatcher.BeginInvoke(t.newColorDataHandler);
                     imageFrame.Dispose();
                     imageFrame = null;
@@ -1031,28 +1112,36 @@ namespace KinectAudioTracker
         {
             var t = (KinectSoundHandler)data;
 
-            double angle = 0.0;
-            double confidence = 0.0;
-            double confidenceCutoff = 0.0;
+            double sourceAngle = 0.0, confidence = 0.0, confidenceCutoff = 0.0, beamAngle = 0.0;
 
             t.kinect.AudioSource.SoundSourceAngleChanged +=
                 (object sender, SoundSourceAngleChangedEventArgs e) =>
                 {
-                    angle = e.Angle;
+                    sourceAngle = e.Angle;
                     confidence = e.ConfidenceLevel;
+                    t.waiter.Set();
+                };
+
+            t.kinect.AudioSource.BeamAngleChanged +=
+                (object sender, BeamAngleChangedEventArgs e) =>
+                {
+                    beamAngle = e.Angle;
                     t.waiter.Set();
                 };
 
             while (true)
             {
-                t.waiter.WaitOne();
+                var success = t.waiter.WaitOne(new TimeSpan(0, 2, 0));
+                if (!success)
+                    throw new TimeoutException();
 
                 if (!t.running) break;
 
                 if (confidence > confidenceCutoff)
                 {
-                    t.dataStorage.soundSourceAngle = angle;
-                    t.dataStorage.soundSourceConfidence = confidence;
+                    lock (Storage.soundSourceAngleLock) { t.dataStorage.SoundSourceAngle = sourceAngle; }
+                    lock (Storage.soundSourceConfidenceLock) { t.dataStorage.SoundSourceConfidence = confidence; }
+                    lock (Storage.beamAngleLock) { t.dataStorage.BeamAngle = Util.radToDeg(beamAngle); }
                     t.uiDispatcher.Invoke(t.newSoundDataHandler);
                 }
             }
